@@ -11,22 +11,105 @@ void ___outputLog(LPCTSTR text, LPCTSTR output)
 
 //---------------------------------------------------------------------
 
-// この DLL のインスタンスハンドル。
-HINSTANCE g_instance = 0;
-// このプラグインのウィンドウハンドル。
-HWND g_filterWindow = 0;
-// 拡張編集のオブジェクトダイアログのハンドル。
-HWND g_exeditObjectDialog = 0;
+HINSTANCE g_instance = 0; // この DLL のインスタンスハンドル。
+HWND g_filterWindow = 0; // このプラグインのウィンドウハンドル。
+HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
+HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
+HWND g_exeditObjectDialog = 0; // 拡張編集のオブジェクトダイアログのハンドル。
 
-// クリックしたフィルタのインデックス。
-int g_filterIndex = 0;
-// ドラッグ中か判定するためのフラグ。
-BOOL g_isFilterDragging = FALSE;
+int g_srcFilterIndex = 0; // ドラッグ元のフィルタのインデックス。
+int g_dstFilterIndex = 0; // ドラッグ先のフィルタのインデックス。
+BOOL g_isFilterDragging = FALSE; // ドラッグ中か判定するためのフラグ。
 
-// カレントオブジェクトのインデックスへのポインタ。
-int* g_objectIndex = 0;
-// オブジェクトデータへのポインタ。
-DWORD* g_objectData = 0;
+int* g_objectIndex = 0; // カレントオブジェクトのインデックスへのポインタ。
+DWORD* g_objectData = 0; // オブジェクトデータへのポインタ。
+int* g_filterPosY = 0; // フィルタの Y 座標配列へのポインタ。
+
+const int FILTER_HEADER_HEIGHT = 16; // フィルタの先頭付近の高さ。
+
+// フィルタの Y 座標を返す。
+int GetFilterPosY(int filterIndex, LPCRECT rc)
+{
+	return g_filterPosY[filterIndex + 1] - FILTER_HEADER_HEIGHT / 2;
+}
+
+// フィルタの高さを返す。
+int GetFilterHeight(int filterIndex, LPCRECT rc)
+{
+	int y1 = GetFilterPosY(filterIndex, rc);
+	int y2 = GetFilterPosY(filterIndex + 1, rc);
+	if (y2 > 0) return y2 - y1;
+	return rc->bottom - y1;
+}
+
+//---------------------------------------------------------------------
+
+// マークウィンドウのウィンドウ関数。
+LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
+{
+	switch (message)
+	{
+	case WM_PAINT:
+		{
+			PAINTSTRUCT ps;
+			HDC dc = ::BeginPaint(hwnd, &ps);
+			// color で塗りつぶす。
+			COLORREF color = (COLORREF)::GetProp(hwnd, _T("DragFilter.Color"));
+			HBRUSH brush = ::CreateSolidBrush(color);
+			FillRect(dc, &ps.rcPaint, brush);
+			::DeleteObject(brush);
+			EndPaint(hwnd, &ps);
+			return 0;
+		}
+	}
+
+	return ::DefWindowProc(hwnd, message, wParam, lParam);
+}
+
+// マークウィンドウを作成して返す。
+HWND createMarkWindow(COLORREF color)
+{
+	WNDCLASS wc = {};
+	wc.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS | CS_NOCLOSE;
+	wc.hCursor = ::LoadCursor(0, IDC_ARROW);
+	wc.lpfnWndProc = markWindowProc;
+	wc.hInstance = g_instance;
+	wc.lpszClassName = _T("DragFilter.Mark");
+	::RegisterClass(&wc);
+
+	HWND hwnd = ::CreateWindowEx(
+		WS_EX_TOOLWINDOW | WS_EX_LAYERED | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE,
+		_T("DragFilter.Mark"),
+		_T("DragFilter.Mark"),
+		WS_POPUP | WS_CLIPSIBLINGS | WS_CLIPCHILDREN,
+		0, 0, 0, 0,
+		0, 0, g_instance, 0);
+
+	::SetProp(hwnd, _T("DragFilter.Color"), (HANDLE)color);
+
+	return hwnd;
+}
+
+// 指定されたマークウィンドウを表示する。
+void showMarkWindow(HWND hwnd, int filterIndex)
+{
+	RECT rc; ::GetClientRect(g_exeditObjectDialog, &rc);
+	int x = rc.left;
+	int y = GetFilterPosY(filterIndex, &rc);
+	int w = rc.right - rc.left;
+	int h = GetFilterHeight(filterIndex, &rc);
+
+	POINT pos = { x, y };
+	::ClientToScreen(g_exeditObjectDialog, &pos);
+	::SetLayeredWindowAttributes(hwnd, 0, 92, LWA_ALPHA);
+	::SetWindowPos(hwnd, HWND_TOPMOST, pos.x, pos.y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+}
+
+// 指定されたマークウィンドウを非表示にする。
+void hideMarkWindow(HWND hwnd)
+{
+	::ShowWindow(hwnd, SW_HIDE);
+}
 
 //---------------------------------------------------------------------
 
@@ -77,6 +160,7 @@ void initExeditHook(HWND hwnd)
 	ShowControls = (Type_ShowControls)(exedit + 0x305E0);
 	g_objectIndex = (int*)(exedit + 0x177A10);
 	g_objectData = (DWORD*)(exedit + 0x1E0FA4);
+	g_filterPosY = (int*)(exedit + 0x196714);
 
 	// 拡張編集の関数をフックする。
 	DetourTransactionBegin();
@@ -162,16 +246,22 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			pos.y = GET_Y_LPARAM(lParam);
 
 			// クリックしたフィルタを記憶しておく。
-			g_filterIndex = GetFilterIndexFromY(pos.y);
-			MY_TRACE_INT(g_filterIndex);
+			g_srcFilterIndex = GetFilterIndexFromY(pos.y);
+			MY_TRACE_INT(g_srcFilterIndex);
+			g_dstFilterIndex = g_srcFilterIndex;
 
-			if (g_filterIndex > 0)
+			if (g_srcFilterIndex > 0)
 			{
 				MY_TRACE(_T("フィルタのドラッグを開始します\n"));
 
+				// マウスカーソルを変えて、マウスをキャプチャーする。
 				::SetCursor(::LoadCursor(0, IDC_SIZENS));
 				::SetCapture(hwnd);
+				// フラグを立てる。
 				g_isFilterDragging = TRUE;
+
+				// ドラッグ元をマークする。
+				showMarkWindow(g_dragSrcWindow, g_srcFilterIndex);
 			}
 
 			break;
@@ -180,71 +270,109 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 		{
 			MY_TRACE(_T("WM_LBUTTONUP\n"));
 
-			// マウスをキャプチャーしているかチェックする。
-			if (::GetCapture() == hwnd)
+			// フィルタをドラッグ中かチェックする。
+			if (::GetCapture() == hwnd && g_isFilterDragging)
 			{
-				::ReleaseCapture();
+				::ReleaseCapture(); // ここで WM_CAPTURECHANGED が呼ばれる。
 
-				// フィルタをドラッグ中かチェックする。
-				if (g_isFilterDragging)
+				MY_TRACE_INT(g_srcFilterIndex);
+				MY_TRACE_INT(g_dstFilterIndex);
+
+				// オブジェクトのインデックスを取得する。
+				DWORD EAX = *g_objectIndex;
+				DWORD EDX = EAX*8+EAX;
+				DWORD ECX = EDX*4+EAX;
+				EDX = *g_objectData;
+				ECX = ECX*4+ECX;
+				DWORD ESI = *(DWORD*)(ECX*8+EDX+0x50);
+				if ((LONG)ESI < 0) ESI = EAX;
+				int objectIndex = ESI;
+				MY_TRACE_INT(objectIndex);
+
+				POINT pos;
+				pos.x = GET_X_LPARAM(lParam);
+				pos.y = GET_Y_LPARAM(lParam);
+
+				// フィルタのインデックスの差分を取得する。
+				int sub = g_dstFilterIndex - g_srcFilterIndex;
+				MY_TRACE_INT(sub);
+
+				if (sub != 0)
 				{
-					// オブジェクトのインデックスを取得する。
-					DWORD EAX = *g_objectIndex;
-					DWORD EDX = EAX*8+EAX;
-					DWORD ECX = EDX*4+EAX;
-					EDX = *g_objectData;
-					ECX = ECX*4+ECX;
-					DWORD ESI = *(DWORD*)(ECX*8+EDX+0x50);
-					if ((LONG)ESI < 0) ESI = EAX;
-					int objectIndex = ESI;
+					MY_TRACE(_T("ドラッグ先にフィルタを移動します\n"));
 
-					POINT pos;
-					pos.x = GET_X_LPARAM(lParam);
-					pos.y = GET_Y_LPARAM(lParam);
+					// Undo を構築する。
+					PushUndo();
+					CreateUndo(objectIndex, 1);
 
-					// クリックアップした位置にあるフィルタを取得する。
-					int filterIndex = GetFilterIndexFromY(pos.y);
-					if (filterIndex <= 0) filterIndex = 1;
-					MY_TRACE_INT(filterIndex);
-
-					// インデックスの差分を取得する。
-					int sub = filterIndex - g_filterIndex;
-
-					if (sub != 0)
+					// フィルタを移動する。
+					if (sub < 0)
 					{
-						MY_TRACE(_T("ドラッグ先にフィルタを移動します\n"));
-
-						// Undo を構築する。
-						PushUndo();
-						CreateUndo(objectIndex, 1);
-
-						// フィルタを移動する。
-						if (sub < 0)
-						{
-							// 上に移動
-							for (int i = sub; i < 0; i++)
-								SwapFilter(objectIndex, g_filterIndex--, -1);
-						}
-						else
-						{
-							// 下に移動
-							for (int i = sub; i > 0; i--)
-								SwapFilter(objectIndex, g_filterIndex++, 1);
-						}
-
-						// ダイアログを再描画する。
-						DrawObjectDialog(objectIndex);
-						// コントロール群を再配置する。
-						HideControls();
-						ShowControls(*g_objectIndex);
-
-						::PostMessage(g_filterWindow, WM_FILTER_COMMAND, 0, 0);
+						// 上に移動
+						for (int i = sub; i < 0; i++)
+							SwapFilter(objectIndex, g_srcFilterIndex--, -1);
 					}
+					else
+					{
+						// 下に移動
+						for (int i = sub; i > 0; i--)
+							SwapFilter(objectIndex, g_srcFilterIndex++, 1);
+					}
+
+					// ダイアログを再描画する。
+					DrawObjectDialog(objectIndex);
+					// コントロール群を再配置する。
+					HideControls();
+					ShowControls(*g_objectIndex);
+
+					// フレームの再描画を促す。
+					::PostMessage(g_filterWindow, WM_FILTER_COMMAND, 0, 0);
 				}
 			}
 
-			// ドラッグフラグをリセットする。
+			// ドラッグフラグなどをリセットする。
 			g_isFilterDragging = FALSE;
+			hideMarkWindow(g_dragSrcWindow);
+			hideMarkWindow(g_dragDstWindow);
+
+			break;
+		}
+	case WM_MOUSEMOVE:
+		{
+			// フィルタをドラッグ中かチェックする。
+			if (::GetCapture() == hwnd && g_isFilterDragging)
+			{
+				POINT pos;
+				pos.x = GET_X_LPARAM(lParam);
+				pos.y = GET_Y_LPARAM(lParam);
+
+				// マウスカーソルの位置にあるフィルタを取得する。
+				g_dstFilterIndex = GetFilterIndexFromY(pos.y);
+				if (g_dstFilterIndex <= 0) g_dstFilterIndex = 1;
+//				MY_TRACE_INT(g_dstFilterIndex);
+
+				if (g_dstFilterIndex != g_srcFilterIndex)
+				{
+					// ドラッグ先をマークする。
+					showMarkWindow(g_dragDstWindow, g_dstFilterIndex);
+				}
+				else
+				{
+					// ドラッグ先のマークを隠す。
+					hideMarkWindow(g_dragDstWindow);
+				}
+			}
+
+			break;
+		}
+	case WM_CAPTURECHANGED:
+		{
+			MY_TRACE(_T("WM_CAPTURECHANGED\n"));
+
+			// ドラッグフラグなどをリセットする。
+			g_isFilterDragging = FALSE;
+			hideMarkWindow(g_dragSrcWindow);
+			hideMarkWindow(g_dragDstWindow);
 
 			break;
 		}
@@ -259,7 +387,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 1.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 2.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
@@ -299,8 +427,15 @@ BOOL func_init(FILTER *fp)
 {
 	MY_TRACE(_T("func_init()\n"));
 
+	// このフィルタのウィンドウハンドルを保存しておく。
 	g_filterWindow = fp->hwnd;
 	MY_TRACE_HEX(g_filterWindow);
+
+	// マークウィンドウを作成する。
+	g_dragSrcWindow = createMarkWindow(RGB(0x00, 0x00, 0xff));
+	MY_TRACE_HEX(g_dragSrcWindow);
+	g_dragDstWindow = createMarkWindow(RGB(0xff, 0x00, 0x00));
+	MY_TRACE_HEX(g_dragDstWindow);
 
 	return TRUE;
 }

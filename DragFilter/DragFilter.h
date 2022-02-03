@@ -35,6 +35,9 @@ DECLARE_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR classNam
 
 DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam));
 
+//---------------------------------------------------------------------
+// Internal Function and Variable
+
 DECLARE_INTERNAL_PROC(int, CDECL, GetFilterIndexFromY, (int y));
 DECLARE_INTERNAL_PROC(void, CDECL, PushUndo, ());
 DECLARE_INTERNAL_PROC(void, CDECL, CreateUndo, (int objectIndex, BOOL flag));
@@ -45,5 +48,6 @@ DECLARE_INTERNAL_PROC(BOOL, CDECL, ShowControls, (int objectIndex));
 
 extern int* g_objectIndex;
 extern DWORD* g_objectData;
+extern int* g_filterPosY;
 
 //---------------------------------------------------------------------
