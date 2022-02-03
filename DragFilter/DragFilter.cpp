@@ -122,6 +122,7 @@ void initHook()
 	DetourUpdateThread(::GetCurrentThread());
 
 	ATTACH_HOOK_PROC(CreateWindowExA);
+	ATTACH_HOOK_PROC(GetMessageA);
 
 	if (DetourTransactionCommit() == NO_ERROR)
 	{
@@ -230,6 +231,52 @@ IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR classN
 		initExeditHook(result);
 	}
 
+	return result;
+}
+
+IMPLEMENT_HOOK_PROC(BOOL, WINAPI, GetMessageA, (LPMSG msg, HWND hwnd, UINT msgFilterMin, UINT msgFilterMax))
+{
+#if 1
+	BOOL result = ::GetMessageW(msg, hwnd, msgFilterMin, msgFilterMax);
+#else
+	BOOL result = true_GetMessageA(msg, hwnd, msgFilterMin, msgFilterMax);
+#endif
+#if 1
+/*
+	// この処理を実行しても ESC キーでダイアログが非表示になってしまう。
+	if (msg->message == WM_KEYDOWN ||
+		msg->message == WM_KEYUP ||
+		msg->message == WM_CHAR)
+	{
+		if (msg->wParam == VK_ESCAPE ||
+			msg->wParam == VK_TAB ||
+			msg->wParam == VK_RETURN)
+		{
+			return result;
+		}
+	}
+*/
+	// 親ウィンドウを取得する。
+	HWND dlg = ::GetParent(msg->hwnd);
+	if (!dlg) return result;
+
+	// 親ウィンドウがオブジェクトダイアログか確認する。
+	TCHAR className[MAX_PATH] = {};
+	::GetClassName(dlg, className, MAX_PATH);
+//	MY_TRACE_TSTR(className);
+	if (::lstrcmpi(className, "ExtendedFilterClass") == 0)
+	{
+		// ダイアログメッセージを処理する。
+		if (::IsDialogMessageW(dlg, msg))
+		{
+			// このメッセージはディスパッチしてはならないので WM_NULL に置き換える。
+			msg->hwnd = 0;
+			msg->message = WM_NULL;
+			msg->wParam = 0;
+			msg->lParam = 0;
+		}
+	}
+#endif
 	return result;
 }
 
@@ -387,7 +434,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 2.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 3.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
