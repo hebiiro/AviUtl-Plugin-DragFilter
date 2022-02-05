@@ -47,6 +47,8 @@ DECLARE_INTERNAL_PROC(void, CDECL, DrawObjectDialog, (int objectIndex));
 DECLARE_INTERNAL_PROC(void, CDECL, HideControls, ());
 DECLARE_INTERNAL_PROC(BOOL, CDECL, ShowControls, (int objectIndex));
 
+extern auls::EXEDIT_OBJECT** g_objectTable;
+extern auls::EXEDIT_FILTER** g_filterTable;
 extern int* g_objectIndex;
 extern DWORD* g_objectData;
 extern int* g_filterPosY;

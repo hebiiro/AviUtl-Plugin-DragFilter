@@ -5,6 +5,10 @@
 #include <windowsx.h>
 #include <shlwapi.h>
 #pragma comment(lib, "shlwapi.lib")
+#include <vsstyle.h>
+#include <vssym32.h>
+#include <uxtheme.h>
+#pragma comment(lib, "uxtheme.lib")
 
 #include <tchar.h>
 #include <crtdbg.h>

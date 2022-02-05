@@ -21,28 +21,133 @@ int g_srcFilterIndex = 0; // ドラッグ元のフィルタのインデックス
 int g_dstFilterIndex = 0; // ドラッグ先のフィルタのインデックス。
 BOOL g_isFilterDragging = FALSE; // ドラッグ中か判定するためのフラグ。
 
+auls::EXEDIT_OBJECT** g_objectTable = 0;
+auls::EXEDIT_FILTER** g_filterTable = 0;
 int* g_objectIndex = 0; // カレントオブジェクトのインデックスへのポインタ。
 DWORD* g_objectData = 0; // オブジェクトデータへのポインタ。
 int* g_filterPosY = 0; // フィルタの Y 座標配列へのポインタ。
 
-const int FILTER_HEADER_HEIGHT = 16; // フィルタの先頭付近の高さ。
-
-// フィルタの Y 座標を返す。
-int GetFilterPosY(int filterIndex, LPCRECT rc)
+auls::EXEDIT_OBJECT* Exedit_GetObject(int objectIndex)
 {
-	return g_filterPosY[filterIndex + 1] - FILTER_HEADER_HEIGHT / 2;
+	return g_objectTable[objectIndex];
 }
 
-// フィルタの高さを返す。
-int GetFilterHeight(int filterIndex, LPCRECT rc)
+auls::EXEDIT_FILTER* Exedit_GetFilter(int filterId)
 {
-	int y1 = GetFilterPosY(filterIndex, rc);
-	int y2 = GetFilterPosY(filterIndex + 1, rc);
-	if (y2 > 0) return y2 - y1;
-	return rc->bottom - y1;
+	return g_filterTable[filterId];
+}
+
+auls::EXEDIT_FILTER* Exedit_GetFilter(auls::EXEDIT_OBJECT* object, int filterIndex)
+{
+	if (!object) return 0;
+	int id = object->filter_param[filterIndex].id;
+	if (id < 0) return 0;
+	return Exedit_GetFilter(id);
 }
 
 //---------------------------------------------------------------------
+
+const int FILTER_HEADER_HEIGHT = 18; // フィルタの先頭付近の高さ。
+
+// フィルタ名を返す。
+LPCSTR getFilterName(int objectIndex, int filterIndex)
+{
+	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
+	if (!object) return "";
+	auls::EXEDIT_FILTER* filter = Exedit_GetFilter(object, filterIndex);
+	if (!filter) return "";
+	return filter->name;
+}
+
+// 垂直スクロール量を返す。
+int getScrollY()
+{
+#if 1
+	HWND control = ::GetDlgItem(g_exeditObjectDialog, 1120);
+	RECT rc; ::GetWindowRect(control, &rc);
+	::MapWindowPoints(0, g_exeditObjectDialog, (POINT*)&rc, 2);
+	return 7 - rc.top;
+#else
+	return ::GetScrollPos(g_exeditObjectDialog, SB_VERT);
+#endif
+}
+
+// マウス座標を返す。
+POINT getMousePoint(LPARAM lParam)
+{
+	int sy = getScrollY();
+	POINT pos;
+	pos.x = GET_X_LPARAM(lParam);
+	pos.y = GET_Y_LPARAM(lParam) + sy;
+	return pos;
+}
+
+// フィルタの Y 座標を返す。
+int getFilterPosY(int filterIndex)
+{
+	return g_filterPosY[filterIndex + 1];
+}
+
+// フィルタの高さを返す。
+int getFilterHeight(int filterIndex, int maxHeight)
+{
+	int y1 = getFilterPosY(filterIndex);
+	int y2 = getFilterPosY(filterIndex + 1);
+	if (y2 > 0) return y2 - y1;
+	int sy = getScrollY();
+	int h = maxHeight - (y1 - FILTER_HEADER_HEIGHT / 2 - sy);
+	if (h > 0) return h;
+	return FILTER_HEADER_HEIGHT;
+}
+
+// フィルタ矩形を返す。
+void getFilterRect(int filterIndex, LPRECT rc)
+{
+	::GetClientRect(g_exeditObjectDialog, rc);
+	int y = getFilterPosY(filterIndex) - FILTER_HEADER_HEIGHT / 2;
+	int h = getFilterHeight(filterIndex, rc->bottom);
+	rc->top = y;
+	rc->bottom = y + h;
+	int sy = getScrollY();
+	::OffsetRect(rc, 0, -sy);
+}
+
+//---------------------------------------------------------------------
+
+void drawText(HWND hwnd, HDC dc, LPCWSTR text, int c, LPRECT rc, UINT format)
+{
+#if 0
+	HTHEME theme = ::OpenThemeData(hwnd, VSCLASS_WINDOW);
+
+	DTTOPTS op = { sizeof(op) };
+	op.dwFlags =
+		DTT_TEXTCOLOR |
+		DTT_SHADOWCOLOR | DTT_SHADOWTYPE | DTT_SHADOWOFFSET |
+		DTT_APPLYOVERLAY;
+/*
+		DTT_BORDERCOLOR | DTT_BORDERSIZE |
+		DTT_GLOWSIZE |
+*/
+	op.crText = RGB(0xff, 0xff, 0xff);
+	op.crBorder = RGB(0x00, 0x00, 0x00);
+	op.crShadow = RGB(0x00, 0x00, 0x00);
+	op.iTextShadowType = TST_CONTINUOUS;
+	op.ptShadowOffset.x = 2;
+	op.ptShadowOffset.y = 2;
+	op.iBorderSize = 1;
+	op.fApplyOverlay = TRUE;
+	op.iGlowSize = 4;
+	HRESULT hr = ::DrawThemeTextEx(theme, dc, TEXT_BODYTITLE, 0, text, -1, format, rc, &op);
+
+	::CloseThemeData(theme);
+#else
+//	::SetBkMode(dc, OPAQUE);
+	::SetBkMode(dc, TRANSPARENT);
+	::SetTextColor(dc, RGB(0xff, 0xff, 0xff));
+	::SetBkColor(dc, RGB(0x00, 0x00, 0x00));
+	::DrawTextW(dc, text, -1, rc, format);
+#endif
+}
 
 // マークウィンドウのウィンドウ関数。
 LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam)
@@ -53,12 +158,27 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 		{
 			PAINTSTRUCT ps;
 			HDC dc = ::BeginPaint(hwnd, &ps);
-			// color で塗りつぶす。
+			RECT rc = ps.rcPaint;
+/*
+			BP_PAINTPARAMS pp = { sizeof(pp) };
+			HDC mdc = 0;
+			HPAINTBUFFER pb = ::BeginBufferedPaint(dc, &rc, BPBF_TOPDOWNDIB, &pp, &mdc);
+*/
+			// 背景を color で塗りつぶす。
 			COLORREF color = (COLORREF)::GetProp(hwnd, _T("DragFilter.Color"));
 			HBRUSH brush = ::CreateSolidBrush(color);
 			FillRect(dc, &ps.rcPaint, brush);
 			::DeleteObject(brush);
+
+			// ウィンドウテキストを描画する。
+			WCHAR text[MAX_PATH];
+			::GetWindowTextW(hwnd, text, MAX_PATH);
+			drawText(hwnd, dc, text, -1, &ps.rcPaint, DT_CENTER | DT_TOP | DT_NOCLIP);
+/*
+			::EndBufferedPaint(pb, TRUE);
+*/
 			EndPaint(hwnd, &ps);
+
 			return 0;
 		}
 	}
@@ -93,16 +213,16 @@ HWND createMarkWindow(COLORREF color)
 // 指定されたマークウィンドウを表示する。
 void showMarkWindow(HWND hwnd, int filterIndex)
 {
-	RECT rc; ::GetClientRect(g_exeditObjectDialog, &rc);
-	int x = rc.left;
-	int y = GetFilterPosY(filterIndex, &rc);
-	int w = rc.right - rc.left;
-	int h = GetFilterHeight(filterIndex, &rc);
+	LPCSTR filterName = getFilterName(*g_objectIndex, filterIndex);
+	MY_TRACE_STR(filterName);
+	::SetWindowTextA(hwnd, filterName);
 
-	POINT pos = { x, y };
+	RECT rc; getFilterRect(filterIndex, &rc);
+	POINT pos = { rc.left, rc.top };
+	SIZE size = { rc.right - rc.left, rc.bottom - rc.top };
 	::ClientToScreen(g_exeditObjectDialog, &pos);
-	::SetLayeredWindowAttributes(hwnd, 0, 92, LWA_ALPHA);
-	::SetWindowPos(hwnd, HWND_TOPMOST, pos.x, pos.y, w, h, SWP_NOACTIVATE | SWP_SHOWWINDOW);
+	::SetLayeredWindowAttributes(hwnd, 0, 96, LWA_ALPHA);
+	::SetWindowPos(hwnd, HWND_TOPMOST, pos.x, pos.y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
 
 // 指定されたマークウィンドウを非表示にする。
@@ -159,6 +279,8 @@ void initExeditHook(HWND hwnd)
 	DrawObjectDialog = (Type_DrawObjectDialog)(exedit + 0x39490);
 	HideControls = (Type_HideControls)(exedit + 0x30500);
 	ShowControls = (Type_ShowControls)(exedit + 0x305E0);
+	g_objectTable = (auls::EXEDIT_OBJECT**)(exedit + 0x168FA8);
+	g_filterTable = (auls::EXEDIT_FILTER**)(exedit + 0x187C98);
 	g_objectIndex = (int*)(exedit + 0x177A10);
 	g_objectData = (DWORD*)(exedit + 0x1E0FA4);
 	g_filterPosY = (int*)(exedit + 0x196714);
@@ -288,9 +410,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 		{
 			MY_TRACE(_T("WM_LBUTTONDOWN\n"));
 
-			POINT pos;
-			pos.x = GET_X_LPARAM(lParam);
-			pos.y = GET_Y_LPARAM(lParam);
+			POINT pos = getMousePoint(lParam);
 
 			// クリックしたフィルタを記憶しておく。
 			g_srcFilterIndex = GetFilterIndexFromY(pos.y);
@@ -389,9 +509,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			// フィルタをドラッグ中かチェックする。
 			if (::GetCapture() == hwnd && g_isFilterDragging)
 			{
-				POINT pos;
-				pos.x = GET_X_LPARAM(lParam);
-				pos.y = GET_Y_LPARAM(lParam);
+				POINT pos = getMousePoint(lParam);
 
 				// マウスカーソルの位置にあるフィルタを取得する。
 				g_dstFilterIndex = GetFilterIndexFromY(pos.y);
@@ -408,6 +526,9 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 					// ドラッグ先のマークを隠す。
 					hideMarkWindow(g_dragDstWindow);
 				}
+
+				// ドラッグ元のマークを再配置する。
+				showMarkWindow(g_dragSrcWindow, g_srcFilterIndex);
 			}
 
 			break;
@@ -434,7 +555,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 3.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 4.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
