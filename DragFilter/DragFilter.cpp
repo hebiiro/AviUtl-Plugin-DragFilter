@@ -29,6 +29,7 @@ int* g_filterIndex = 0; // カレントフィルタのインデックスへの�
 auls::EXEDIT_OBJECT* g_objectData = 0; // オブジェクトデータへのポインタ。
 BYTE** g_objectExdata = 0; // オブジェクト拡張データへのポインタ。
 int* g_filterPosY = 0; // フィルタの Y 座標配列へのポインタ。
+int* g_nextObject = 0; // 次のオブジェクトの配列へのポインタ。
 
 auls::EXEDIT_OBJECT* Exedit_GetObject(int objectIndex)
 {
@@ -151,77 +152,97 @@ void getFilterRect(int filterIndex, LPRECT rc)
 
 UINT g_createCloneId = 0;
 
-void createClone()
+void createClone(int origObjectIndex, int newFilterIndex)
 {
 	if (!g_createCloneId) return;
 
 	MY_TRACE(_T("複製を作成します\n"));
 
-	// オブジェクトインデックスを取得する。
-	int objectIndex = *g_objectIndex;
+	int objectIndex = origObjectIndex;
 	MY_TRACE_INT(objectIndex);
-	if (objectIndex < 0) return;
 
-	// フィルタインデックスを取得する。
-	int filterIndex = *g_filterIndex;
-	MY_TRACE_INT(filterIndex);
-	if (filterIndex < 0) return;
+	int midptLeader = Exedit_GetObject(objectIndex)->index_midpt_leader;
+	MY_TRACE_INT(midptLeader);
+	if (midptLeader >= 0)
+		objectIndex = midptLeader; // 中間点がある場合は中間点元のオブジェクト ID を取得
 
-	// フィルタ ID を取得する。
-	int filterId = getFilterId(objectIndex, filterIndex);
-	MY_TRACE_INT(filterId);
-	if (filterId < 0) return;
+	while (objectIndex >= 0)
+	{
+		// オブジェクトインデックスを取得する。
+		MY_TRACE_INT(objectIndex);
+		if (objectIndex < 0) break;
+
+		// オブジェクトを取得する。
+		auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
+		MY_TRACE_HEX(object);
+		if (!object) break;
+
+		int midptLeader2 = object->index_midpt_leader;
+		MY_TRACE_INT(midptLeader2);
+		if (midptLeader2 != midptLeader) break;
+
+		// コピー元フィルタのインデックスを取得する。
+		int srcFilterIndex = *g_filterIndex;
+		MY_TRACE_INT(srcFilterIndex);
+		if (srcFilterIndex < 0) break;
+
+		// コピー先フィルタのインデックスを取得する。
+		int dstFilterIndex = newFilterIndex;
+		MY_TRACE_INT(dstFilterIndex);
+		if (dstFilterIndex < 0) break;
+
+		// コピー元フィルタを取得する。
+		auls::EXEDIT_FILTER* srcFilter = Exedit_GetFilter(object, srcFilterIndex);
+		MY_TRACE_HEX(srcFilter);
+		if (!srcFilter) break;
+
+		// コピー先フィルタを取得する。
+		auls::EXEDIT_FILTER* dstFilter = Exedit_GetFilter(object, dstFilterIndex);
+		MY_TRACE_HEX(dstFilter);
+		if (!dstFilter) break;
+
+		if (g_createCloneId == ID_CREATE_CLONE)
+		{
+			// 拡張データをコピーする。
+			BYTE* objectExdata = *g_objectExdata;
+			BYTE* srcFilterExdata = objectExdata + object->ExdataOffset(srcFilterIndex) + 0x0004;
+			BYTE* dstFilterExdata = objectExdata + object->ExdataOffset(dstFilterIndex) + 0x0004;
+			memcpy(dstFilterExdata, srcFilterExdata, srcFilter->exdata_size);
+
+			// トラックデータをコピーする。
+			for (int i = 0; i < srcFilter->track_num; i++)
+			{
+				int srcTrackIndex = object->filter_param[srcFilterIndex].track_begin + i;
+				int dstTrackIndex = object->filter_param[dstFilterIndex].track_begin + i;
+				object->track_value_left[dstTrackIndex] = object->track_value_left[srcTrackIndex];
+				object->track_value_right[dstTrackIndex] = object->track_value_right[srcTrackIndex];
+				object->track_mode[dstTrackIndex] = object->track_mode[srcTrackIndex];
+				object->track_param[dstTrackIndex] = object->track_param[srcTrackIndex];
+			}
+
+			// チェックデータをコピーする。
+			for (int i = 0; i < srcFilter->check_num; i++)
+			{
+				int srcCheckIndex = object->filter_param[srcFilterIndex].check_begin + i;
+				int dstCheckIndex = object->filter_param[dstFilterIndex].check_begin + i;
+				object->check_value[dstCheckIndex] = object->check_value[srcCheckIndex];
+			}
+		}
+
+		if (midptLeader < 0) break;
+
+		objectIndex = g_nextObject[objectIndex];
+	}
 
 	// コピー元フィルタのインデックスを取得する。
-	int srcFilterIndex = filterIndex;
+	int srcFilterIndex = *g_filterIndex;
 	MY_TRACE_INT(srcFilterIndex);
 	if (srcFilterIndex < 0) return;
 
 	// コピー先フィルタのインデックスを取得する。
-	int dstFilterIndex = getLastFilterIndex(objectIndex, filterId);
+	int dstFilterIndex = newFilterIndex;
 	MY_TRACE_INT(dstFilterIndex);
 	if (dstFilterIndex < 0) return;
-
-	// オブジェクトを取得する。
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	MY_TRACE_HEX(object);
-	if (!object) return;
-
-	// コピー元フィルタを取得する。
-	auls::EXEDIT_FILTER* srcFilter = Exedit_GetFilter(object, srcFilterIndex);
-	MY_TRACE_HEX(srcFilter);
-	if (!srcFilter) return;
-
-	// コピー先フィルタを取得する。
-	auls::EXEDIT_FILTER* dstFilter = Exedit_GetFilter(object, dstFilterIndex);
-	MY_TRACE_HEX(dstFilter);
-	if (!dstFilter) return;
-
-	if (g_createCloneId == ID_CREATE_CLONE)
-	{
-		// 拡張データをコピーする。
-		BYTE* objectExdata = *g_objectExdata;
-		BYTE* srcFilterExdata = objectExdata + object->ExdataOffset(srcFilterIndex) + 0x0004;
-		BYTE* dstFilterExdata = objectExdata + object->ExdataOffset(dstFilterIndex) + 0x0004;
-		memcpy(dstFilterExdata, srcFilterExdata, srcFilter->exdata_size);
-
-		// トラックデータをコピーする。
-		for (int i = 0; i < srcFilter->track_num; i++)
-		{
-			int srcTrackIndex = object->filter_param[srcFilterIndex].track_begin + i;
-			int dstTrackIndex = object->filter_param[dstFilterIndex].track_begin + i;
-			object->track_value_left[dstTrackIndex] = object->track_value_left[srcTrackIndex];
-			object->track_value_right[dstTrackIndex] = object->track_value_right[srcTrackIndex];
-		}
-
-		// チェックデータをコピーする。
-		for (int i = 0; i < srcFilter->check_num; i++)
-		{
-			int srcCheckIndex = object->filter_param[srcFilterIndex].check_begin + i;
-			int dstCheckIndex = object->filter_param[dstFilterIndex].check_begin + i;
-			object->check_value[dstCheckIndex] = object->check_value[srcCheckIndex];
-		}
-	}
 
 	switch (g_createCloneId)
 	{
@@ -230,7 +251,7 @@ void createClone()
 			// コピー元のすぐ上に移動
 			int c = dstFilterIndex - srcFilterIndex;
 			for (int i = 0; i < c; i++)
-				SwapFilter(objectIndex, dstFilterIndex--, -1);
+				SwapFilter(origObjectIndex, dstFilterIndex--, -1);
 
 			break;
 		}
@@ -240,7 +261,7 @@ void createClone()
 			// コピー元のすぐ下に移動
 			int c = dstFilterIndex - srcFilterIndex - 1;
 			for (int i = 0; i < c; i++)
-				SwapFilter(objectIndex, dstFilterIndex--, -1);
+				SwapFilter(origObjectIndex, dstFilterIndex--, -1);
 
 			break;
 		}
@@ -253,7 +274,7 @@ IMPLEMENT_HOOK_PROC_NULL(void, CDECL, Unknown1, (int objectIndex, int filterInde
 
 	true_Unknown1(objectIndex, filterIndex);
 
-	createClone();
+	createClone(objectIndex, filterIndex);
 }
 
 //---------------------------------------------------------------------
@@ -436,6 +457,7 @@ void initExeditHook(HWND hwnd)
 	g_objectData = (auls::EXEDIT_OBJECT*)(exedit + 0x1E0FA4);
 	g_objectExdata = (BYTE**)(exedit + 0x1E0FA8);
 	g_filterPosY = (int*)(exedit + 0x196714);
+	g_nextObject = (int*)(exedit + 0x1592d8);
 
 	// 拡張編集の関数をフックする。
 	DetourTransactionBegin();
@@ -612,9 +634,10 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 
 				// オブジェクトのインデックスを取得する。
 				int objectIndex = *g_objectIndex;
-				int midptIndex = g_objectData[objectIndex].index_midpt_leader;
-				if (midptIndex < 0)
-					objectIndex = midptIndex; // 中間点がある場合は中間点元のオブジェクト ID を取得
+				int midptLeader = Exedit_GetObject(objectIndex)->index_midpt_leader;
+				MY_TRACE_INT(midptLeader);
+				if (midptLeader >= 0)
+					objectIndex = midptLeader; // 中間点がある場合は中間点元のオブジェクト ID を取得
 				MY_TRACE_INT(objectIndex);
 
 				POINT pos;
@@ -725,15 +748,41 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 
 					// フィルタ ID を取得する。
 					int filterId = getFilterId(objectIndex, filterIndex);
-					MY_TRACE_INT(filterId);
+					MY_TRACE_HEX(filterId);
 					if (filterId < 0) break;
 
-					// フィルタを作成するコマンド ID をセットする。
-					g_createCloneId = wParam;
-					LRESULT result = true_Exedit_ObjectDialog_WndProc(hwnd, message, 2000 + filterId, lParam);
-					g_createCloneId = 0;
-
-					return result;
+					switch (filterId)
+					{
+					case 0x00:
+					case 0x01:
+					case 0x02:
+					case 0x03:
+					case 0x04:
+					case 0x05:
+					case 0x06:
+					case 0x07:
+					case 0x08:
+					case 0x09:
+					case 0x0A:
+					case 0x0B:
+					case 0x0C:
+					case 0x0D:
+					case 0x50:
+					case 0x5D:
+					case 0x5E:
+					case 0x5F:
+						{
+							break;
+						}
+					default:
+						{
+							// フィルタを作成するコマンド ID をセットする。
+							g_createCloneId = wParam;
+							LRESULT result = true_Exedit_ObjectDialog_WndProc(hwnd, message, 2000 + filterId, lParam);
+							g_createCloneId = 0;
+							return result;
+						}
+					}
 				}
 			}
 
@@ -750,7 +799,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 4.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.1 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{

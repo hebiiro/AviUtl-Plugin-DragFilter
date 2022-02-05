@@ -59,5 +59,6 @@ extern auls::EXEDIT_FILTER** g_filterTable;
 extern int* g_objectIndex;
 extern auls::EXEDIT_OBJECT* g_objectData;
 extern int* g_filterPosY;
+extern int* g_nextObject;
 
 //---------------------------------------------------------------------
