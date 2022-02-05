@@ -85,7 +85,10 @@ POINT getMousePoint(LPARAM lParam)
 // フィルタの Y 座標を返す。
 int getFilterPosY(int filterIndex)
 {
-	return g_filterPosY[filterIndex + 1];
+	if (g_filterPosY[1] == 0)
+		return g_filterPosY[filterIndex + 1];
+	else
+		return g_filterPosY[filterIndex];
 }
 
 // フィルタの高さを返す。
