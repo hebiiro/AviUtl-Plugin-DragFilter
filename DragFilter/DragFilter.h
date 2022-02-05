@@ -1,7 +1,7 @@
 ﻿#pragma once
 
 //---------------------------------------------------------------------
-// Define
+// Define and Const
 
 #define DECLARE_INTERNAL_PROC(resultType, callType, procName, args) \
 	typedef resultType (callType *Type_##procName) args; \
@@ -28,6 +28,10 @@
 
 #define ATTACH_HOOK_PROC(name) DetourAttach((PVOID*)&true_##name, hook_##name)
 
+const UINT ID_CREATE_CLONE			= 12020;
+const UINT ID_CREATE_SAME_ABOVE		= 12021;
+const UINT ID_CREATE_SAME_BELOW		= 12022;
+
 //---------------------------------------------------------------------
 // Api Hook
 
@@ -39,6 +43,8 @@ DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT
 //---------------------------------------------------------------------
 // Internal Function and Variable
 
+DECLARE_HOOK_PROC(void, CDECL, Unknown1, (int objectIndex, int filterIndex));
+
 DECLARE_INTERNAL_PROC(int, CDECL, GetFilterIndexFromY, (int y));
 DECLARE_INTERNAL_PROC(void, CDECL, PushUndo, ());
 DECLARE_INTERNAL_PROC(void, CDECL, CreateUndo, (int objectIndex, BOOL flag));
@@ -47,10 +53,11 @@ DECLARE_INTERNAL_PROC(void, CDECL, DrawObjectDialog, (int objectIndex));
 DECLARE_INTERNAL_PROC(void, CDECL, HideControls, ());
 DECLARE_INTERNAL_PROC(BOOL, CDECL, ShowControls, (int objectIndex));
 
+extern HMENU* g_menu[5];
 extern auls::EXEDIT_OBJECT** g_objectTable;
 extern auls::EXEDIT_FILTER** g_filterTable;
 extern int* g_objectIndex;
-extern DWORD* g_objectData;
+extern auls::EXEDIT_OBJECT* g_objectData;
 extern int* g_filterPosY;
 
 //---------------------------------------------------------------------
