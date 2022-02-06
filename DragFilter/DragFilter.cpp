@@ -108,6 +108,43 @@ int getLastFilterIndex(int objectIndex, int filterId)
 	return -1;
 }
 
+BOOL isIgnoreFilter(int objectIndex, int filterIndex, auls::EXEDIT_OBJECT* object, auls::EXEDIT_FILTER* filter)
+{
+#if 1
+	switch (object->filter_param[filterIndex].id)
+	{
+	case 0x00: // 動画ファイル
+	case 0x01: // 画像ファイル
+	case 0x02: // 音声ファイル
+	case 0x03: // テキスト
+	case 0x04: // 図形
+	case 0x05: // フレームバッファ
+	case 0x06: // 音声波形
+	case 0x07: // シーン
+	case 0x08: // シーン(音声)
+	case 0x09: // 直前オブジェクト
+	case 0x0A: // 標準描画
+	case 0x0B: // 拡張描画
+	case 0x0C: // ID_NORMAL_PLAY
+	case 0x0D: // パーティクル出力
+	case 0x50: // カスタムオブジェクト
+	case 0x5D: // 時間制御
+	case 0x5E: // グループ制御
+	case 0x5F: // カメラ制御
+		{
+			return TRUE;
+		}
+	}
+	return FALSE;
+#else
+	const DWORD IGNORE_FILTER =
+		auls::EXEDIT_FILTER::FLAG_INPUT_FILTER |
+		auls::EXEDIT_FILTER::FLAG_UNKNOWN;
+
+	return !!(filter->flag & IGNORE_FILTER);
+#endif
+}
+
 // 垂直スクロール量を返す。
 int getScrollY()
 {
@@ -192,7 +229,7 @@ int getSrcFilterIndexFromY(int y)
 	MY_TRACE_HEX(filter->flag);
 
 	// フィルタが移動できるものかどうかチェックする。
-	if (filter->flag & IGNORE_FILTER)
+	if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
 		return -1;
 
 	return filterIndex;
@@ -224,7 +261,7 @@ int getDstFilterIndexFromY(int y)
 	MY_TRACE_HEX(filter->flag);
 
 	// フィルタが移動できるものかどうかチェックする。
-	if (filter->flag & IGNORE_FILTER)
+	if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
 	{
 		if (filterIndex == 0)
 		{
@@ -374,37 +411,10 @@ IMPLEMENT_HOOK_PROC_NULL(void, CDECL, Unknown1, (int objectIndex, int filterInde
 
 void drawText(HWND hwnd, HDC dc, LPCWSTR text, int c, LPRECT rc, UINT format)
 {
-#if 0
-	HTHEME theme = ::OpenThemeData(hwnd, VSCLASS_WINDOW);
-
-	DTTOPTS op = { sizeof(op) };
-	op.dwFlags =
-		DTT_TEXTCOLOR |
-		DTT_BORDERCOLOR | DTT_BORDERSIZE |
-		DTT_APPLYOVERLAY;
-/*
-		DTT_SHADOWCOLOR | DTT_SHADOWTYPE | DTT_SHADOWOFFSET |
-		DTT_GLOWSIZE |
-*/
-	op.crText = RGB(0xff, 0xff, 0xff);
-	op.crBorder = RGB(0x00, 0x00, 0x00);
-	op.crShadow = RGB(0x00, 0x00, 0x00);
-	op.iTextShadowType = TST_CONTINUOUS;
-	op.ptShadowOffset.x = 2;
-	op.ptShadowOffset.y = 2;
-	op.iBorderSize = 2;
-	op.fApplyOverlay = TRUE;
-	op.iGlowSize = 4;
-	HRESULT hr = ::DrawThemeTextEx(theme, dc, TEXT_BODYTITLE, 0, text, -1, format, rc, &op);
-
-	::CloseThemeData(theme);
-#else
-//	::SetBkMode(dc, OPAQUE);
 	::SetBkMode(dc, TRANSPARENT);
 	::SetTextColor(dc, RGB(0xff, 0xff, 0xff));
 	::SetBkColor(dc, RGB(0x00, 0x00, 0x00));
 	::DrawTextW(dc, text, -1, rc, format);
-#endif
 }
 
 // マークウィンドウのウィンドウ関数。
@@ -422,6 +432,7 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 			HDC mdc = 0;
 			HPAINTBUFFER pb = ::BeginBufferedPaint(dc, &rc, BPBF_TOPDOWNDIB, &pp, &mdc);
 
+			if (pb)
 			{
 				HDC dc = mdc;
 
@@ -434,17 +445,10 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 				// ウィンドウテキストを描画する。
 				WCHAR text[MAX_PATH];
 				::GetWindowTextW(hwnd, text, MAX_PATH);
-//				HFONT font = (HFONT)::GetStockObject(DEFAULT_GUI_FONT);
-//				LOGFONT lf; ::GetObject(font, sizeof(lf), &lf);
-//				lf.lfWeight = FW_BLACK;
-//				font = ::CreateFontIndirect(&lf);
-//				HFONT oldFont = (HFONT)::SelectObject(dc, font);
 				drawText(hwnd, dc, text, -1, &ps.rcPaint, DT_CENTER | DT_TOP | DT_NOCLIP);
-//				::SelectObject(dc, oldFont);
-//				::DeleteObject(font);
-			}
 
-			::EndBufferedPaint(pb, TRUE);
+				::EndBufferedPaint(pb, TRUE);
+			}
 
 			EndPaint(hwnd, &ps);
 
@@ -512,7 +516,6 @@ void initHook()
 	DetourUpdateThread(::GetCurrentThread());
 
 	ATTACH_HOOK_PROC(CreateWindowExA);
-	ATTACH_HOOK_PROC(GetMessageA);
 
 	if (DetourTransactionCommit() == NO_ERROR)
 	{
@@ -611,11 +614,6 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 			g_instance = instance;
 			MY_TRACE_HEX(g_instance);
 
-			// この DLL の参照カウンタを増やしておく。
-			WCHAR moduleFileName[MAX_PATH] = {};
-			::GetModuleFileNameW(g_instance, moduleFileName, MAX_PATH);
-			::LoadLibraryW(moduleFileName);
-
 			initHook();
 
 			break;
@@ -637,61 +635,17 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 
 IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR className, LPCSTR windowName, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE instance, LPVOID param))
 {
-	HWND result = true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
-
 	if (::lstrcmpiA(className, "ExtendedFilterClass") == 0)
 	{
+		HWND result = true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
+
 		// 拡張編集をフックする。
 		initExeditHook(result);
+
+		return result;
 	}
 
-	return result;
-}
-
-IMPLEMENT_HOOK_PROC(BOOL, WINAPI, GetMessageA, (LPMSG msg, HWND hwnd, UINT msgFilterMin, UINT msgFilterMax))
-{
-#if 1
-	BOOL result = ::GetMessageW(msg, hwnd, msgFilterMin, msgFilterMax);
-#else
-	BOOL result = true_GetMessageA(msg, hwnd, msgFilterMin, msgFilterMax);
-#endif
-#if 1
-/*
-	// この処理を実行しても ESC キーでダイアログが非表示になってしまう。
-	if (msg->message == WM_KEYDOWN ||
-		msg->message == WM_KEYUP ||
-		msg->message == WM_CHAR)
-	{
-		if (msg->wParam == VK_ESCAPE ||
-			msg->wParam == VK_TAB ||
-			msg->wParam == VK_RETURN)
-		{
-			return result;
-		}
-	}
-*/
-	// 親ウィンドウを取得する。
-	HWND dlg = ::GetParent(msg->hwnd);
-	if (!dlg) return result;
-
-	// 親ウィンドウがオブジェクトダイアログか確認する。
-	TCHAR className[MAX_PATH] = {};
-	::GetClassName(dlg, className, MAX_PATH);
-//	MY_TRACE_TSTR(className);
-	if (::lstrcmpi(className, "ExtendedFilterClass") == 0)
-	{
-		// ダイアログメッセージを処理する。
-		if (::IsDialogMessageW(dlg, msg))
-		{
-			// このメッセージはディスパッチしてはならないので WM_NULL に置き換える。
-			msg->hwnd = 0;
-			msg->message = WM_NULL;
-			msg->wParam = 0;
-			msg->lParam = 0;
-		}
-	}
-#endif
-	return result;
+	return true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
 }
 
 IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam))
@@ -706,6 +660,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				::ScreenToClient(hwnd, &pos);
 				pos = getMousePoint(MAKELPARAM(pos.x, pos.y));
 
+				// マウスの位置に移動できるフィルタがあるかチェックする。
 				int filterIndex = getSrcFilterIndexFromY(pos.y);
 				MY_TRACE_INT(filterIndex);
 				if (filterIndex < 0) break;
@@ -879,7 +834,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 					MY_TRACE_HEX(filter->flag);
 
 					// フィルタが複製できるものかどうかチェックする。
-					if (filter->flag & IGNORE_FILTER)
+					if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
 						break;
 
 					// フィルタ ID を取得する。
@@ -908,7 +863,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.1 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.3 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
@@ -967,6 +922,10 @@ BOOL func_init(FILTER *fp)
 BOOL func_exit(FILTER *fp)
 {
 	MY_TRACE(_T("func_exit()\n"));
+
+	// マークウィンドウを削除する。
+	::DestroyWindow(g_dragSrcWindow), g_dragSrcWindow = 0;
+	::DestroyWindow(g_dragDstWindow), g_dragDstWindow = 0;
 
 	return TRUE;
 }
