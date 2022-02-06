@@ -32,6 +32,10 @@ const UINT ID_CREATE_CLONE			= 12020;
 const UINT ID_CREATE_SAME_ABOVE		= 12021;
 const UINT ID_CREATE_SAME_BELOW		= 12022;
 
+const DWORD IGNORE_FILTER =
+	auls::EXEDIT_FILTER::FLAG_INPUT_FILTER |
+	auls::EXEDIT_FILTER::FLAG_CONTROL_FILTER;
+
 //---------------------------------------------------------------------
 // Api Hook
 
@@ -57,7 +61,7 @@ extern HMENU* g_menu[5];
 extern auls::EXEDIT_OBJECT** g_objectTable;
 extern auls::EXEDIT_FILTER** g_filterTable;
 extern int* g_objectIndex;
-extern auls::EXEDIT_OBJECT* g_objectData;
+extern auls::EXEDIT_OBJECT** g_objectData;
 extern int* g_filterPosY;
 extern int* g_nextObject;
 
