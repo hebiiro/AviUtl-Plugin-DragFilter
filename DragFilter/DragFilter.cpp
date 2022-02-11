@@ -439,7 +439,7 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 				// 背景を color で塗りつぶす。
 				COLORREF color = (COLORREF)::GetProp(hwnd, _T("DragFilter.Color"));
 				HBRUSH brush = ::CreateSolidBrush(color);
-				FillRect(dc, &ps.rcPaint, brush);
+				::FillRect(dc, &ps.rcPaint, brush);
 				::DeleteObject(brush);
 
 				// ウィンドウテキストを描画する。
@@ -450,7 +450,7 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 				::EndBufferedPaint(pb, TRUE);
 			}
 
-			EndPaint(hwnd, &ps);
+			::EndPaint(hwnd, &ps);
 
 			return 0;
 		}
@@ -614,6 +614,11 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 			g_instance = instance;
 			MY_TRACE_HEX(g_instance);
 
+			// この DLL の参照カウンタを増やしておく。
+			WCHAR moduleFileName[MAX_PATH] = {};
+			::GetModuleFileNameW(g_instance, moduleFileName, MAX_PATH);
+			::LoadLibraryW(moduleFileName);
+
 			initHook();
 
 			break;
@@ -635,6 +640,7 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 
 IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR className, LPCSTR windowName, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE instance, LPVOID param))
 {
+	if ((DWORD)className > 0x0000FFFFUL)
 	if (::lstrcmpiA(className, "ExtendedFilterClass") == 0)
 	{
 		HWND result = true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
@@ -656,15 +662,20 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 		{
 			if ((HWND)wParam == hwnd && LOWORD(lParam) == HTCLIENT)
 			{
+				MY_TRACE(_T("WM_SETCURSOR\n"));
+
+				//　マウスの位置を取得する。
 				POINT pos; ::GetCursorPos(&pos);
 				::ScreenToClient(hwnd, &pos);
 				pos = getMousePoint(MAKELPARAM(pos.x, pos.y));
+				MY_TRACE_POINT(pos);
 
 				// マウスの位置に移動できるフィルタがあるかチェックする。
 				int filterIndex = getSrcFilterIndexFromY(pos.y);
 				MY_TRACE_INT(filterIndex);
 				if (filterIndex < 0) break;
 
+				// マウスカーソルを変更する。
 				::SetCursor(::LoadCursor(0, IDC_SIZENS));
 				return TRUE;
 			}
@@ -708,16 +719,21 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				MY_TRACE_INT(g_dstFilterIndex);
 
 				// オブジェクトのインデックスを取得する。
-				int objectIndex = *g_objectIndex;
-				int midptLeader = Exedit_GetObject(objectIndex)->index_midpt_leader;
+				int objectIndex = Exedit_GetCurrentObjectIndex();
+				MY_TRACE_INT(objectIndex);
+				if (objectIndex < 0) break;
+
+				// オブジェクトを取得する。
+				auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
+				if (!object) break;
+				MY_TRACE_HEX(object);
+
+				// 中間点があるか調べる。
+				int midptLeader = object->index_midpt_leader;
 				MY_TRACE_INT(midptLeader);
 				if (midptLeader >= 0)
 					objectIndex = midptLeader; // 中間点がある場合は中間点元のオブジェクト ID を取得
 				MY_TRACE_INT(objectIndex);
-
-				POINT pos;
-				pos.x = GET_X_LPARAM(lParam);
-				pos.y = GET_Y_LPARAM(lParam);
 
 				// フィルタのインデックスの差分を取得する。
 				int sub = g_dstFilterIndex - g_srcFilterIndex;
@@ -863,7 +879,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.3 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.4 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
@@ -878,9 +894,9 @@ EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 		NULL, NULL, NULL,
 		NULL, NULL,
 		NULL, NULL, NULL,
-		func_proc,
-		func_init,
-		func_exit,
+		NULL,//func_proc,
+		NULL,//func_init,
+		NULL,//func_exit,
 		NULL,
 		func_WndProc,
 		NULL, NULL,
@@ -903,16 +919,6 @@ BOOL func_init(FILTER *fp)
 {
 	MY_TRACE(_T("func_init()\n"));
 
-	// このフィルタのウィンドウハンドルを保存しておく。
-	g_filterWindow = fp->hwnd;
-	MY_TRACE_HEX(g_filterWindow);
-
-	// マークウィンドウを作成する。
-	g_dragSrcWindow = createMarkWindow(RGB(0x00, 0x00, 0xff));
-	MY_TRACE_HEX(g_dragSrcWindow);
-	g_dragDstWindow = createMarkWindow(RGB(0xff, 0x00, 0x00));
-	MY_TRACE_HEX(g_dragDstWindow);
-
 	return TRUE;
 }
 
@@ -922,10 +928,6 @@ BOOL func_init(FILTER *fp)
 BOOL func_exit(FILTER *fp)
 {
 	MY_TRACE(_T("func_exit()\n"));
-
-	// マークウィンドウを削除する。
-	::DestroyWindow(g_dragSrcWindow), g_dragSrcWindow = 0;
-	::DestroyWindow(g_dragDstWindow), g_dragDstWindow = 0;
 
 	return TRUE;
 }
@@ -949,11 +951,35 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, void *e
 
 	switch (message)
 	{
+	case WM_FILTER_INIT:
+		{
+			MY_TRACE(_T("func_WndProc(WM_FILTER_INIT)\n"));
+
+			// このフィルタのウィンドウハンドルを保存しておく。
+			g_filterWindow = fp->hwnd;
+			MY_TRACE_HEX(g_filterWindow);
+
+			// マークウィンドウを作成する。
+			g_dragSrcWindow = createMarkWindow(RGB(0x00, 0x00, 0xff));
+			MY_TRACE_HEX(g_dragSrcWindow);
+			g_dragDstWindow = createMarkWindow(RGB(0xff, 0x00, 0x00));
+			MY_TRACE_HEX(g_dragDstWindow);
+
+			break;
+		}
+	case WM_FILTER_EXIT:
+		{
+			MY_TRACE(_T("func_WndProc(WM_FILTER_EXIT)\n"));
+
+			// マークウィンドウを削除する。
+			::DestroyWindow(g_dragSrcWindow), g_dragSrcWindow = 0;
+			::DestroyWindow(g_dragDstWindow), g_dragDstWindow = 0;
+
+			break;
+		}
 	case WM_FILTER_UPDATE:
 		{
 			MY_TRACE(_T("func_WndProc(WM_FILTER_UPDATE)\n"));
-
-			if (fp->exfunc->is_editing(editp) != TRUE) break; // 編集中でなければ終了
 
 			break;
 		}
@@ -961,15 +987,19 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, void *e
 		{
 			MY_TRACE(_T("func_WndProc(WM_FILTER_CHANGE_EDIT)\n"));
 
-			if (fp->exfunc->is_editing(editp) != TRUE) break; // 編集中でなければ終了
-
 			break;
 		}
 	case WM_FILTER_COMMAND:
 		{
 			MY_TRACE(_T("func_WndProc(WM_FILTER_COMMAND)\n"));
 
-			return TRUE;
+			if (wParam == 0 && lParam == 0)
+			{
+				MY_TRACE(_T("フレームを更新します\n"));
+				return TRUE;
+			}
+
+			break;
 		}
 	}
 
