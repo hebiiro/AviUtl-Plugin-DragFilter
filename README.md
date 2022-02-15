@@ -1,5 +1,6 @@
 # AviUtl プラグイン - フィルタドラッグ移動
 
+* version 5.0.5 by 蛇色 - 2022/02/15 ドラッグ中に他の操作をしたときの問題を修正
 * version 5.0.4 by 蛇色 - 2022/02/11 特定状況で強制終了する問題を修正
 * version 5.0.3 by 蛇色 - 2022/02/06 UNICODE 文字列入力対応機能を削除
 * version 5.0.2 by 蛇色 - 2022/02/06 別のオブジェクトを参照してしまう問題などを修正
@@ -38,5 +39,5 @@
 ## 動作確認
 
 * (必須) AviUtl 1.10 & 拡張編集 0.92 http://spring-fragrance.mints.ne.jp/aviutl/
-* (共存確認) patch.aul r10 https://www.nicovideo.jp/watch/sm39491708
+* (共存確認) patch.aul r11 https://www.nicovideo.jp/watch/sm40027189
 * (共存確認) eclipse_fast 1.00 https://www.nicovideo.jp/watch/sm39756003
