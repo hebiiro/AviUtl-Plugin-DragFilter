@@ -177,6 +177,7 @@
   <ItemGroup>
     <ClInclude Include="..\Common\MyMSXML.h" />
     <ClInclude Include="..\Common\MyTracer.h" />
+    <ClInclude Include="DragFilter_Classes.h" />
     <ClInclude Include="pch.h" />
     <ClInclude Include="DragFilter.h" />
   </ItemGroup>

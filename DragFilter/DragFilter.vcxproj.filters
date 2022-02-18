@@ -9,6 +9,7 @@
       <Filter>Common</Filter>
     </ClInclude>
     <ClInclude Include="DragFilter.h" />
+    <ClInclude Include="DragFilter_Classes.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />

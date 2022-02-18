@@ -1,5 +1,6 @@
 # AviUtl プラグイン - フィルタドラッグ移動
 
+* version 6.0.0 by 蛇色 - 2022/02/18 WideDialog.auf に対応
 * version 5.0.5 by 蛇色 - 2022/02/15 ドラッグ中に他の操作をしたときの問題を修正
 * version 5.0.4 by 蛇色 - 2022/02/11 特定状況で強制終了する問題を修正
 * version 5.0.3 by 蛇色 - 2022/02/06 UNICODE 文字列入力対応機能を削除
@@ -13,6 +14,8 @@
 * version 1.0.0 by 蛇色 - 2022/02/02 初版
 
 オブジェクトダイアログのフィルタをドラッグして移動できるようにします。
+
+![フィルタドラッグ移動](https://user-images.githubusercontent.com/96464759/154659767-e7e5ac3a-c181-4300-872a-1304905210c1.png)
 
 ## 導入方法
 
@@ -41,3 +44,6 @@
 * (必須) AviUtl 1.10 & 拡張編集 0.92 http://spring-fragrance.mints.ne.jp/aviutl/
 * (共存確認) patch.aul r11 https://www.nicovideo.jp/watch/sm40027189
 * (共存確認) eclipse_fast 1.00 https://www.nicovideo.jp/watch/sm39756003
+* (共存確認) WideDialog.auf 1.03 https://www.nicovideo.jp/watch/sm39708120
+* (共存確認) 設定ダイアログ画面サイズ固定化プラグイン 2.6 https://github.com/amate/PropertyWindowFixerPlugin
+	* ただし、eclipse_fast、bakusoku.auf、「エディットボックス最適化」などのプラグインが別途必要。
