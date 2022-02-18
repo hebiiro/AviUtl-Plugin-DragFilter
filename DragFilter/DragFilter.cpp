@@ -1,5 +1,6 @@
 ﻿#include "pch.h"
 #include "DragFilter.h"
+#include "DragFilter_Classes.h"
 
 //---------------------------------------------------------------------
 
@@ -17,12 +18,9 @@ HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
 HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
 HWND g_exeditObjectDialog = 0; // 拡張編集のオブジェクトダイアログのハンドル。
 
-int g_srcObjectIndex = 0; // ドラッグ元のオブジェクトのインデックス。
-int g_srcFilterIndex = 0; // ドラッグ元のフィルタのインデックス。
-int g_dstFilterIndex = 0; // ドラッグ先のフィルタのインデックス。
-auls::EXEDIT_OBJECT* g_srcObject = 0; // ドラッグ元のオブジェクト。
-auls::EXEDIT_FILTER* g_srcFilter = 0; // ドラッグ元のフィルタ。
-auls::EXEDIT_FILTER* g_dstFilter = 0; // ドラッグ先のフィルタ。
+ObjectHolder g_srcObject; // ドラッグ元のオブジェクト。
+FilterHolder g_srcFilter; // ドラッグ元のフィルタ。
+FilterHolder g_dstFilter; // ドラッグ先のフィルタ。
 BOOL g_isFilterDragging = FALSE; // ドラッグ中か判定するためのフラグ。
 
 HMENU* g_menu[5] = {}; // 拡張編集のメニューへのポインタ。
@@ -71,215 +69,8 @@ int Exedit_GetNextObjectIndex(int objectIndex)
 
 //---------------------------------------------------------------------
 
-const int FILTER_HEADER_HEIGHT = 18; // フィルタの先頭付近の高さ。
-
-// フィルタ名を返す。
-LPCSTR getFilterName(int objectIndex, int filterIndex)
+void createClone(UINT createCloneId, int origObjectIndex, int newFilterIndex)
 {
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return "";
-	auls::EXEDIT_FILTER* filter = Exedit_GetFilter(object, filterIndex);
-	if (!filter) return "";
-	return filter->name;
-}
-
-// フィルタ ID を返す。
-int getFilterId(int objectIndex, int filterIndex)
-{
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return auls::EXEDIT_OBJECT::FILTER_PARAM::INVALID_ID;
-	return object->filter_param[filterIndex].id;
-}
-
-// フィルタの数を返す。
-int getFilterCount(int objectIndex)
-{
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return 0;
-	return object->GetFilterNum();
-}
-
-int getLastFilterIndex(int objectIndex, int filterId)
-{
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return -1;
-	for (int i = auls::EXEDIT_OBJECT::MAX_FILTER - 1; i >= 0; i--)
-	{
-		if (object->filter_param[i].id == filterId)
-			return i;
-	}
-
-	return -1;
-}
-
-BOOL isIgnoreFilter(int objectIndex, int filterIndex, auls::EXEDIT_OBJECT* object, auls::EXEDIT_FILTER* filter)
-{
-#if 1
-	switch (object->filter_param[filterIndex].id)
-	{
-	case 0x00: // 動画ファイル
-	case 0x01: // 画像ファイル
-	case 0x02: // 音声ファイル
-	case 0x03: // テキスト
-	case 0x04: // 図形
-	case 0x05: // フレームバッファ
-	case 0x06: // 音声波形
-	case 0x07: // シーン
-	case 0x08: // シーン(音声)
-	case 0x09: // 直前オブジェクト
-	case 0x0A: // 標準描画
-	case 0x0B: // 拡張描画
-	case 0x0C: // ID_NORMAL_PLAY
-	case 0x0D: // パーティクル出力
-	case 0x50: // カスタムオブジェクト
-	case 0x5D: // 時間制御
-	case 0x5E: // グループ制御
-	case 0x5F: // カメラ制御
-		{
-			return TRUE;
-		}
-	}
-	return FALSE;
-#else
-	const DWORD IGNORE_FILTER =
-		auls::EXEDIT_FILTER::FLAG_INPUT_FILTER |
-		auls::EXEDIT_FILTER::FLAG_UNKNOWN;
-
-	return !!(filter->flag & IGNORE_FILTER);
-#endif
-}
-
-// 垂直スクロール量を返す。
-int getScrollY()
-{
-#if 1
-	HWND control = ::GetDlgItem(g_exeditObjectDialog, 1120);
-	RECT rc; ::GetWindowRect(control, &rc);
-	::MapWindowPoints(0, g_exeditObjectDialog, (POINT*)&rc, 2);
-	return 7 - rc.top;
-#else
-	return ::GetScrollPos(g_exeditObjectDialog, SB_VERT);
-#endif
-}
-
-// マウス座標を返す。
-POINT getMousePoint(LPARAM lParam)
-{
-	int sy = getScrollY();
-	POINT pos;
-	pos.x = GET_X_LPARAM(lParam);
-	pos.y = GET_Y_LPARAM(lParam) + sy;
-	return pos;
-}
-
-// フィルタの Y 座標を返す。
-int getFilterPosY(int filterIndex)
-{
-	if (filterIndex >= 12) return 0;
-
-	if (g_filterPosY[1] == 0)
-		return g_filterPosY[filterIndex + 1];
-	else
-		return g_filterPosY[filterIndex];
-}
-
-// フィルタの高さを返す。
-int getFilterHeight(int filterIndex, int maxHeight)
-{
-	int y1 = getFilterPosY(filterIndex);
-	int y2 = getFilterPosY(filterIndex + 1);
-	if (y2 > 0) return y2 - y1;
-	int sy = getScrollY();
-	int h = maxHeight - (y1 - FILTER_HEADER_HEIGHT / 2 - sy);
-	if (h > 0) return h;
-	return FILTER_HEADER_HEIGHT;
-}
-
-// フィルタ矩形を返す。
-void getFilterRect(int filterIndex, LPRECT rc)
-{
-	::GetClientRect(g_exeditObjectDialog, rc);
-	int y = getFilterPosY(filterIndex) - FILTER_HEADER_HEIGHT / 2;
-	int h = getFilterHeight(filterIndex, rc->bottom);
-	rc->top = y;
-	rc->bottom = y + h;
-	int sy = getScrollY();
-	::OffsetRect(rc, 0, -sy);
-}
-
-// y 座標にあるドラッグ元フィルタのインデックスを返す。
-int getSrcFilterIndexFromY(int y, int objectIndex)
-{
-	// フィルタインデックスを取得する。
-	int filterIndex = GetFilterIndexFromY(y);
-//	MY_TRACE_INT(filterIndex);
-	if (filterIndex < 0) return -1;
-
-	// オブジェクトを取得する。
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return -1;
-//	MY_TRACE_HEX(object);
-
-	// フィルタを取得する。
-	auls::EXEDIT_FILTER* filter = Exedit_GetFilter(object, filterIndex);
-	if (!filter) return -1;
-//	MY_TRACE_HEX(filter);
-//	MY_TRACE_STR(filter->name);
-//	MY_TRACE_HEX(filter->flag);
-
-	// フィルタが移動できるものかどうかチェックする。
-	if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
-		return -1;
-
-	return filterIndex;
-}
-
-// y 座標にあるドラッグ先フィルタのインデックスを返す。
-int getDstFilterIndexFromY(int y, int objectIndex)
-{
-	// フィルタインデックスを取得する。
-	int filterIndex = GetFilterIndexFromY(y);
-//	MY_TRACE_INT(filterIndex);
-	if (filterIndex < 0) filterIndex = 0;
-
-	// オブジェクトを取得する。
-	auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-	if (!object) return -1;
-//	MY_TRACE_HEX(object);
-
-	// フィルタを取得する。
-	auls::EXEDIT_FILTER* filter = Exedit_GetFilter(object, filterIndex);
-	if (!filter) return -1;
-//	MY_TRACE_HEX(filter);
-//	MY_TRACE_STR(filter->name);
-//	MY_TRACE_HEX(filter->flag);
-
-	// フィルタが移動できるものかどうかチェックする。
-	if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
-	{
-		if (filterIndex == 0)
-		{
-			// フィルタが先頭要素の場合はその次のフィルタを返す。
-			return 1;
-		}
-		else
-		{
-			// フィルタが先頭要素ではない場合は無効。
-			return -1;
-		}
-	}
-
-	return filterIndex;
-}
-
-//---------------------------------------------------------------------
-
-UINT g_createCloneId = 0;
-
-void createClone(int origObjectIndex, int newFilterIndex)
-{
-	if (!g_createCloneId) return;
-
 	MY_TRACE(_T("複製を作成します\n"));
 
 	int objectIndex = origObjectIndex;
@@ -325,7 +116,7 @@ void createClone(int origObjectIndex, int newFilterIndex)
 		MY_TRACE_HEX(dstFilter);
 		if (!dstFilter) break;
 
-		if (g_createCloneId == ID_CREATE_CLONE)
+		if (createCloneId == ID_CREATE_CLONE)
 		{
 			// 拡張データをコピーする。
 			BYTE* objectExdata = *g_objectExdata;
@@ -368,7 +159,7 @@ void createClone(int origObjectIndex, int newFilterIndex)
 	MY_TRACE_INT(dstFilterIndex);
 	if (dstFilterIndex < 0) return;
 
-	switch (g_createCloneId)
+	switch (createCloneId)
 	{
 	case ID_CREATE_SAME_ABOVE:
 		{
@@ -392,13 +183,16 @@ void createClone(int origObjectIndex, int newFilterIndex)
 	}
 }
 
+UINT g_createCloneId = 0;
+
 IMPLEMENT_HOOK_PROC_NULL(void, CDECL, Unknown1, (int objectIndex, int filterIndex))
 {
 	MY_TRACE(_T("Unknown1(%d, %d)\n"), objectIndex, filterIndex);
 
 	true_Unknown1(objectIndex, filterIndex);
 
-	createClone(objectIndex, filterIndex);
+	if (g_createCloneId)
+		createClone(g_createCloneId, objectIndex, filterIndex);
 }
 
 //---------------------------------------------------------------------
@@ -478,14 +272,14 @@ HWND createMarkWindow(COLORREF color)
 }
 
 // 指定されたマークウィンドウを表示する。
-void showMarkWindow(HWND hwnd, int filterIndex)
+void showMarkWindow(HWND hwnd, const DialogInfo& di, FilterHolder filter)
 {
-	LPCSTR filterName = getFilterName(*g_objectIndex, filterIndex);
+	LPCSTR filterName = filter.getFilter()->name;
 //	MY_TRACE_STR(filterName);
 	::SetWindowTextA(hwnd, filterName);
 	::InvalidateRect(hwnd, 0, FALSE);
 
-	RECT rc; getFilterRect(filterIndex, &rc);
+	RECT rc; di.getFilterRect(filter, &rc);
 	POINT pos = { rc.left, rc.top };
 	SIZE size = { rc.right - rc.left, rc.bottom - rc.top };
 	::ClientToScreen(g_exeditObjectDialog, &pos);
@@ -648,17 +442,17 @@ IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR classN
 	return true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
 }
 
-void beginDrag(HWND hwnd)
+void beginDrag(const DialogInfo& di)
 {
 	MY_TRACE(_T("beginDrag()\n"));
 
 	// マウスをキャプチャーする。
-	::SetCapture(hwnd);
+	::SetCapture(di.getDialog());
 	// フラグを立てる。
 	g_isFilterDragging = TRUE;
 
 	// ドラッグ元をマークする。
-	showMarkWindow(g_dragSrcWindow, g_srcFilterIndex);
+	showMarkWindow(g_dragSrcWindow, di, g_srcFilter);
 }
 
 void endDrag()
@@ -681,21 +475,21 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			{
 //				MY_TRACE(_T("WM_SETCURSOR\n"));
 
-				// オブジェクトのインデックスを取得する。
-				int objectIndex = Exedit_GetCurrentObjectIndex();
-//				MY_TRACE_INT(objectIndex);
-				if (objectIndex < 0) break;
+				DialogInfo di(hwnd);
 
-				//　マウスの位置を取得する。
-				POINT pos; ::GetCursorPos(&pos);
-				::ScreenToClient(hwnd, &pos);
-				pos = getMousePoint(MAKELPARAM(pos.x, pos.y));
+				// マウスカーソルの位置を取得する。
+				CursorPos pos(hwnd);
 //				MY_TRACE_POINT(pos);
 
-				// マウスの位置に移動できるフィルタがあるかチェックする。
-				int filterIndex = getSrcFilterIndexFromY(pos.y, objectIndex);
-//				MY_TRACE_INT(filterIndex);
-				if (filterIndex < 0) break;
+				// オブジェクトを取得する。
+				ObjectHolder object(Exedit_GetCurrentObjectIndex());
+//				MY_TRACE_OBJECT_HOLDER(object);
+				if (!object.isValid()) break;
+
+				// マウスカーソルの位置に移動できるフィルタがあるかチェックする。
+				FilterHolder filter = di.getSrcFilter(pos, object);
+//				MY_TRACE_FILTER_HOLDER(filter);
+				if (!filter.isValid()) break;
 
 				// マウスカーソルを変更する。
 				::SetCursor(::LoadCursor(0, IDC_SIZENS));
@@ -708,28 +502,22 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 		{
 			MY_TRACE(_T("WM_LBUTTONDOWN\n"));
 
-			// オブジェクトのインデックスを取得する。
-			g_srcObjectIndex = Exedit_GetCurrentObjectIndex();
-			MY_TRACE_INT(g_srcObjectIndex);
-			if (g_srcObjectIndex < 0) break;
+			DialogInfo di(hwnd);
+
+			// マウスカーソルの位置を取得する。
+			CursorPos pos(hwnd);
+			MY_TRACE_POINT(pos);
 
 			// オブジェクトを取得する。
-			g_srcObject = Exedit_GetObject(g_srcObjectIndex);
-			if (!g_srcObject) break;
-			MY_TRACE_HEX(g_srcObject);
+			g_srcObject = ObjectHolder(Exedit_GetCurrentObjectIndex());
+			MY_TRACE_OBJECT_HOLDER(g_srcObject);
+			if (!g_srcObject.isValid()) break;
 
-			POINT pos = getMousePoint(lParam);
-
-			// クリックしたフィルタをドラッグ元として記憶しておく。
-			g_srcFilterIndex = getSrcFilterIndexFromY(pos.y, g_srcObjectIndex);
-			MY_TRACE_INT(g_srcFilterIndex);
-			g_dstFilterIndex = g_srcFilterIndex;
-			if (g_srcFilterIndex < 0) break;
-
-			// フィルタを取得する。
-			g_srcFilter = Exedit_GetFilter(g_srcObject, g_srcFilterIndex);
-			if (!g_srcFilter) break;
+			// マウスカーソルの位置にあるドラッグ元フィルタを取得する。
+			g_srcFilter = di.getSrcFilter(pos, g_srcObject);
+			MY_TRACE_FILTER_HOLDER(g_srcFilter);
 			g_dstFilter = g_srcFilter;
+			if (!g_srcFilter.isValid()) break;
 
 			MY_TRACE(_T("フィルタのドラッグを開始します\n"));
 
@@ -753,50 +541,51 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			{
 				::ReleaseCapture(); // ここで WM_CAPTURECHANGED が呼ばれる。
 
-				MY_TRACE_INT(g_srcFilterIndex);
-				MY_TRACE_INT(g_dstFilterIndex);
-
-				// オブジェクトのインデックスを取得する。
-				int objectIndex = Exedit_GetCurrentObjectIndex();
-				MY_TRACE_INT(objectIndex);
-				if (objectIndex < 0 || objectIndex != g_srcObjectIndex)
-				{
-					MY_TRACE(_T("ドラッグ開始時のオブジェクトのインデックスではないのでフィルタの移動を中止します\n"));
-					break;
-				}
+				MY_TRACE_FILTER_HOLDER(g_srcFilter);
+				MY_TRACE_FILTER_HOLDER(g_dstFilter);
 
 				// オブジェクトを取得する。
-				auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-				MY_TRACE_HEX(object);
-				if (!object || object != g_srcObject)
+				ObjectHolder object(Exedit_GetCurrentObjectIndex());
+				MY_TRACE_OBJECT_HOLDER(object);
+				if (!object.isValid() || object != g_srcObject)
 				{
 					MY_TRACE(_T("ドラッグ開始時のオブジェクトではないのでフィルタの移動を中止します\n"));
+					::ReleaseCapture(); endDrag();
 					break;
 				}
 
 				// フィルタを取得する。
-				auls::EXEDIT_FILTER* filter = Exedit_GetFilter(g_srcObject, g_srcFilterIndex);
-				MY_TRACE_HEX(filter);
-				if (!filter || filter != g_srcFilter)
+				FilterHolder filter(g_srcObject, g_srcFilter.getFilterIndex());
+				MY_TRACE_FILTER_HOLDER(filter);
+				if (!filter.isValid() || filter != g_srcFilter)
 				{
 					MY_TRACE(_T("ドラッグ開始時のフィルタではないのでフィルタの移動を中止します\n"));
+					::ReleaseCapture(); endDrag();
 					break;
 				}
 
 				// 中間点があるか調べる。
-				int midptLeader = object->index_midpt_leader;
+				int midptLeader = object.getObject()->index_midpt_leader;
 				MY_TRACE_INT(midptLeader);
 				if (midptLeader >= 0)
-					objectIndex = midptLeader; // 中間点がある場合は中間点元のオブジェクト ID を取得
-				MY_TRACE_INT(objectIndex);
+					object = ObjectHolder(midptLeader); // 中間点がある場合は中間点元のオブジェクトを取得
+				MY_TRACE_OBJECT_HOLDER(object);
+
+				int srcFilterIndex = g_srcFilter.getFilterIndex();
+				MY_TRACE_INT(srcFilterIndex);
+
+				int dstFilterIndex = g_dstFilter.getFilterIndex();
+				MY_TRACE_INT(dstFilterIndex);
 
 				// フィルタのインデックスの差分を取得する。
-				int sub = g_dstFilterIndex - g_srcFilterIndex;
+				int sub = dstFilterIndex - srcFilterIndex;
 				MY_TRACE_INT(sub);
 
 				if (sub != 0)
 				{
 					MY_TRACE(_T("ドラッグ先にフィルタを移動します\n"));
+
+					int objectIndex = object.getObjectIndex();
 
 					// Undo を構築する。
 					PushUndo();
@@ -807,13 +596,13 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 					{
 						// 上に移動
 						for (int i = sub; i < 0; i++)
-							SwapFilter(objectIndex, g_srcFilterIndex--, -1);
+							SwapFilter(objectIndex, srcFilterIndex--, -1);
 					}
 					else
 					{
 						// 下に移動
 						for (int i = sub; i > 0; i--)
-							SwapFilter(objectIndex, g_srcFilterIndex++, 1);
+							SwapFilter(objectIndex, srcFilterIndex++, 1);
 					}
 
 					// ダイアログを再描画する。
@@ -834,20 +623,10 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			// フィルタをドラッグ中かチェックする。
 			if (::GetCapture() == hwnd && g_isFilterDragging)
 			{
-				// オブジェクトのインデックスを取得する。
-				int objectIndex = Exedit_GetCurrentObjectIndex();
-				MY_TRACE_INT(objectIndex);
-				if (objectIndex < 0 || objectIndex != g_srcObjectIndex)
-				{
-					MY_TRACE(_T("ドラッグ開始時のオブジェクトのインデックスではないのでドラッグを中止します\n"));
-					::ReleaseCapture(); endDrag();
-					break;
-				}
-
 				// オブジェクトを取得する。
-				auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-				MY_TRACE_HEX(object);
-				if (!object || object != g_srcObject)
+				ObjectHolder object(Exedit_GetCurrentObjectIndex());
+//				MY_TRACE_OBJECT_HOLDER(object);
+				if (!object.isValid() || object != g_srcObject)
 				{
 					MY_TRACE(_T("ドラッグ開始時のオブジェクトではないのでドラッグを中止します\n"));
 					::ReleaseCapture(); endDrag();
@@ -855,26 +634,30 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				}
 
 				// フィルタを取得する。
-				auls::EXEDIT_FILTER* filter = Exedit_GetFilter(g_srcObject, g_srcFilterIndex);
-				MY_TRACE_HEX(filter);
-				if (!filter || filter != g_srcFilter)
+				FilterHolder filter(g_srcObject, g_srcFilter.getFilterIndex());
+//				MY_TRACE_FILTER_HOLDER(filter);
+				if (!filter.isValid() || filter != g_srcFilter)
 				{
 					MY_TRACE(_T("ドラッグ開始時のフィルタではないのでドラッグを中止します\n"));
 					::ReleaseCapture(); endDrag();
 					break;
 				}
 
-				POINT pos = getMousePoint(lParam);
+				DialogInfo di(hwnd);
 
-				// マウスカーソルの位置にあるフィルタを取得する。
-				g_dstFilterIndex = getDstFilterIndexFromY(pos.y, g_srcObjectIndex);
-				if (g_dstFilterIndex < 0) g_dstFilterIndex = g_srcFilterIndex;
-//				MY_TRACE_INT(g_dstFilterIndex);
+				// マウスカーソルの位置を取得する。
+				CursorPos pos(hwnd);
+//				MY_TRACE_POINT(pos);
 
-				if (g_dstFilterIndex != g_srcFilterIndex)
+				// マウスカーソルの位置にあるドラッグ元フィルタを取得する。
+				g_dstFilter = di.getDstFilter(pos, g_srcObject);
+				if (!g_dstFilter.isValid()) g_dstFilter = g_srcFilter;
+//				MY_TRACE_FILTER_HOLDER(g_dstFilter);
+
+				if (g_dstFilter != g_srcFilter)
 				{
 					// ドラッグ先をマークする。
-					showMarkWindow(g_dragDstWindow, g_dstFilterIndex);
+					showMarkWindow(g_dragDstWindow, di, g_dstFilter);
 				}
 				else
 				{
@@ -883,7 +666,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				}
 
 				// ドラッグ元のマークを再配置する。
-				showMarkWindow(g_dragSrcWindow, g_srcFilterIndex);
+				showMarkWindow(g_dragSrcWindow, di, g_srcFilter);
 			}
 
 			break;
@@ -904,34 +687,24 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 			case ID_CREATE_SAME_ABOVE:
 			case ID_CREATE_SAME_BELOW:
 				{
-					// オブジェクトインデックスを取得する。
-					int objectIndex = Exedit_GetCurrentObjectIndex();
-					MY_TRACE_INT(objectIndex);
-					if (objectIndex < 0) break;
-
-					// フィルタインデックスを取得する。
-					int filterIndex = Exedit_GetCurrentFilterIndex();
-					MY_TRACE_INT(filterIndex);
-					if (filterIndex < 0) break;
-
 					// オブジェクトを取得する。
-					auls::EXEDIT_OBJECT* object = Exedit_GetObject(objectIndex);
-					if (!object) break;
-					MY_TRACE_HEX(object);
+					ObjectHolder object(Exedit_GetCurrentObjectIndex());
+					MY_TRACE_OBJECT_HOLDER(object);
+					if (!object.isValid()) break;
 
 					// フィルタを取得する。
-					auls::EXEDIT_FILTER* filter = Exedit_GetFilter(object, filterIndex);
-					if (!filter) break;
-					MY_TRACE_HEX(filter);
-					MY_TRACE_STR(filter->name);
-					MY_TRACE_HEX(filter->flag);
+					FilterHolder filter = FilterHolder(object, Exedit_GetCurrentFilterIndex());
+					MY_TRACE_FILTER_HOLDER(filter);
+					if (!filter.isValid()) break;
+					MY_TRACE_STR(filter.getFilter()->name);
+					MY_TRACE_HEX(filter.getFilter()->flag);
 
 					// フィルタが複製できるものかどうかチェックする。
-					if (isIgnoreFilter(objectIndex, filterIndex, object, filter))
+					if (!filter.isMoveable())
 						break;
 
 					// フィルタ ID を取得する。
-					int filterId = object->filter_param[filterIndex].id;
+					int filterId = object.getObject()->filter_param[filter.getFilterIndex()].id;
 					MY_TRACE_HEX(filterId);
 					if (filterId < 0) break;
 
@@ -956,7 +729,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 5.0.5 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 6.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{

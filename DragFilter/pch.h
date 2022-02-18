@@ -15,6 +15,8 @@
 #include <strsafe.h>
 #include <locale.h>
 
+#include <vector>
+
 typedef const BYTE* LPCBYTE;
 #include "../AviUtl/aulslib/exedit.h"
 #include "../Common/MyTracer.h"

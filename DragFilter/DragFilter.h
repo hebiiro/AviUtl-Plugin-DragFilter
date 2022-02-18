@@ -60,4 +60,11 @@ extern auls::EXEDIT_OBJECT** g_objectData;
 extern int* g_filterPosY;
 extern int* g_nextObject;
 
+int Exedit_GetCurrentObjectIndex();
+int Exedit_GetCurrentFilterIndex();
+auls::EXEDIT_OBJECT* Exedit_GetObject(int objectIndex);
+auls::EXEDIT_FILTER* Exedit_GetFilter(int filterId);
+auls::EXEDIT_FILTER* Exedit_GetFilter(auls::EXEDIT_OBJECT* object, int filterIndex);
+int Exedit_GetNextObjectIndex(int objectIndex);
+
 //---------------------------------------------------------------------
