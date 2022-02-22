@@ -32,6 +32,8 @@ const UINT ID_CREATE_CLONE			= 12020;
 const UINT ID_CREATE_SAME_ABOVE		= 12021;
 const UINT ID_CREATE_SAME_BELOW		= 12022;
 
+const UINT TIMER_ID_CHECK_UPDATE	= 1000;
+
 //---------------------------------------------------------------------
 // Api Hook
 
@@ -56,7 +58,9 @@ extern HMENU* g_menu[5];
 extern auls::EXEDIT_OBJECT** g_objectTable;
 extern auls::EXEDIT_FILTER** g_filterTable;
 extern int* g_objectIndex;
+extern int* g_filterIndex;
 extern auls::EXEDIT_OBJECT** g_objectData;
+extern BYTE** g_objectExdata;
 extern int* g_filterPosY;
 extern int* g_nextObject;
 

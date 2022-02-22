@@ -10,6 +10,10 @@
     </ClInclude>
     <ClInclude Include="DragFilter.h" />
     <ClInclude Include="DragFilter_Classes.h" />
+    <ClInclude Include="Target.h" />
+    <ClInclude Include="..\Common\Profile.h">
+      <Filter>Common</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="pch.cpp" />
