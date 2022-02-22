@@ -1,5 +1,6 @@
 # AviUtl プラグイン - フィルタドラッグ移動
 
+* version 7.0.0 by 蛇色 - 2022/02/22 ターゲットマークを追加
 * version 6.0.0 by 蛇色 - 2022/02/18 WideDialog.auf に対応
 * version 5.0.5 by 蛇色 - 2022/02/15 ドラッグ中に他の操作をしたときの問題を修正
 * version 5.0.4 by 蛇色 - 2022/02/11 特定状況で強制終了する問題を修正
@@ -21,6 +22,7 @@
 
 1. 以下のファイルを AviUtl の Plugins フォルダに配置します。
 	* DragFilter.auf
+	* DragFilter.ini
 
 ## ドラッグ移動の仕方
 
@@ -37,7 +39,22 @@
 
 ## 設定
 
-今のところありません。
+DragFilter.ini をテキストエディタで編集します。AviUtl を再起動しなくても設定ファイルを保存したときに再読み込みされます。
+
+```ini
+[TargetMark]
+alpha=192 ; ターゲットマーク全体のアルファ値。
+penColor=192,0,0,0 ; ペンの色。
+penWidth=4.0f ; ペンの幅。
+brushColor=255,255,255,255 ; ブラシの色。
+base=16 ; 描画アイテムの基準サイズ。
+width=8 ; 描画アイテムの幅。
+fontName=Segoe UI ; フォント名。
+fontSize=32.0 ; フォントの大きさ。
+rotate=7.77 ; 傾ける角度。
+beginMoveX=0 ; 表示開始時の移動アニメーション起点。
+beginMoveY=100 ; 表示開始時の移動アニメーション起点。
+```
 
 ## 動作確認
 

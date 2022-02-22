@@ -4,6 +4,50 @@
 
 //---------------------------------------------------------------------
 
+class FileUpdateChecker
+{
+private:
+
+	WCHAR m_fileName[MAX_PATH];
+	FILETIME m_fileTime;
+
+public:
+
+	FileUpdateChecker(LPCWSTR fileName)
+		: m_fileName()
+		, m_fileTime()
+	{
+		::StringCbCopyW(m_fileName, sizeof(m_fileName), fileName);
+		getFileTime(fileName, &m_fileTime);
+	}
+
+	LPCWSTR getFileName() const
+	{
+		return m_fileName;
+	}
+
+	BOOL isFileUpdated()
+	{
+		FILETIME fileTime;
+		if (!getFileTime(m_fileName, &fileTime)) return FALSE;
+		if (!::CompareFileTime(&m_fileTime, &fileTime)) return FALSE;
+		m_fileTime = fileTime;
+		return TRUE;
+	}
+
+	static BOOL getFileTime(LPCWSTR filePath, FILETIME* fileTime)
+	{
+		HANDLE file = ::CreateFileW(filePath, GENERIC_READ,
+			FILE_SHARE_READ | FILE_SHARE_WRITE, 0, OPEN_EXISTING, 0, 0);
+		if (file == INVALID_HANDLE_VALUE) return FALSE;
+		BOOL retValue = ::GetFileTime(file, 0, 0, fileTime);
+		::CloseHandle(file);
+		return retValue;
+	}
+};
+
+//---------------------------------------------------------------------
+
 class CursorPos : public POINT
 {
 public:
@@ -104,6 +148,11 @@ public:
 		}
 	}
 
+	const ObjectHolder& getObject() const
+	{
+		return m_object;
+	}
+
 	int getFilterIndex() const
 	{
 		return m_filterIndex;
@@ -159,6 +208,30 @@ public:
 			}
 		}
 		return TRUE;
+	}
+
+	LPCSTR getName() const
+	{
+		int objectIndex = getObject().getObjectIndex();
+		int midptLeader = getObject().getObject()->index_midpt_leader;
+		MY_TRACE_INT(midptLeader);
+		if (midptLeader >= 0) objectIndex = midptLeader;
+
+		ObjectHolder object(objectIndex);
+
+		int id = object.getObject()->filter_param[m_filterIndex].id;
+		if (id == 79) // アニメーション効果
+		{
+			BYTE* exdataTable = *g_objectExdata;
+			DWORD offset = object.getObject()->ExdataOffset(m_filterIndex);
+			BYTE* exdata = exdataTable + offset + 0x0004;
+
+			return (LPCSTR)(exdata + 0x04);
+		}
+		else
+		{
+			return m_filter->name;
+		}
 	}
 };
 

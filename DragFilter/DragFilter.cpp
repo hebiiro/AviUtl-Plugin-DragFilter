@@ -1,6 +1,7 @@
 ﻿#include "pch.h"
 #include "DragFilter.h"
 #include "DragFilter_Classes.h"
+#include "Target.h"
 
 //---------------------------------------------------------------------
 
@@ -12,11 +13,16 @@ void ___outputLog(LPCTSTR text, LPCTSTR output)
 
 //---------------------------------------------------------------------
 
+typedef std::shared_ptr<FileUpdateChecker> FileUpdateCheckerPtr;
+typedef std::shared_ptr<TargetMarkWindow> TargetMarkWindowPtr;
+
 HINSTANCE g_instance = 0; // この DLL のインスタンスハンドル。
 HWND g_filterWindow = 0; // このプラグインのウィンドウハンドル。
 HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
 HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
 HWND g_exeditObjectDialog = 0; // 拡張編集のオブジェクトダイアログのハンドル。
+FileUpdateCheckerPtr g_settingsFile;
+TargetMarkWindowPtr g_targetMarkWindow;
 
 ObjectHolder g_srcObject; // ドラッグ元のオブジェクト。
 FilterHolder g_srcFilter; // ドラッグ元のフィルタ。
@@ -218,7 +224,7 @@ LRESULT CALLBACK markWindowProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM l
 
 			BP_PAINTPARAMS pp = { sizeof(pp) };
 			HDC mdc = 0;
-			HPAINTBUFFER pb = ::BeginBufferedPaint(dc, &rc, BPBF_TOPDOWNDIB, &pp, &mdc);
+			HPAINTBUFFER pb = ::BeginBufferedPaint(dc, &rc, BPBF_COMPATIBLEBITMAP, &pp, &mdc);
 
 			if (pb)
 			{
@@ -274,9 +280,9 @@ HWND createMarkWindow(COLORREF color)
 // 指定されたマークウィンドウを表示する。
 void showMarkWindow(HWND hwnd, const DialogInfo& di, FilterHolder filter)
 {
-	LPCSTR filterName = filter.getFilter()->name;
-//	MY_TRACE_STR(filterName);
-	::SetWindowTextA(hwnd, filterName);
+	LPCSTR name = filter.getName();
+//	MY_TRACE_STR(name);
+	::SetWindowTextA(hwnd, name);
 	::InvalidateRect(hwnd, 0, FALSE);
 
 	RECT rc; di.getFilterRect(filter, &rc);
@@ -384,6 +390,24 @@ void initExeditHook(HWND hwnd)
 #endif
 }
 
+// 設定ファイルを読み込む。
+void loadSettings(LPCWSTR fileName)
+{
+	MY_TRACE(_T("loadSettings(%ws)\n"), fileName);
+
+	getPrivateProfileInt(fileName, L"TargetMark", L"alpha", TargetMark::g_alpha);
+	getPrivateProfileColor(fileName, L"TargetMark", L"penColor", TargetMark::g_penColor);
+	getPrivateProfileReal(fileName, L"TargetMark", L"penWidth", TargetMark::g_penWidth);
+	getPrivateProfileColor(fileName, L"TargetMark", L"brushColor", TargetMark::g_brushColor);
+	getPrivateProfileInt(fileName, L"TargetMark", L"base", TargetMark::g_base);
+	getPrivateProfileInt(fileName, L"TargetMark", L"width", TargetMark::g_width);
+	getPrivateProfileBSTR(fileName, L"TargetMark", L"fontName", TargetMark::g_fontName);
+	getPrivateProfileReal(fileName, L"TargetMark", L"fontSize", TargetMark::g_fontSize);
+	getPrivateProfileReal(fileName, L"TargetMark", L"rotate", TargetMark::g_rotate);
+	getPrivateProfileInt(fileName, L"TargetMark", L"beginMoveX", TargetMark::g_beginMove.X);
+	getPrivateProfileInt(fileName, L"TargetMark", L"beginMoveY", TargetMark::g_beginMove.Y);
+}
+
 //---------------------------------------------------------------------
 
 EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
@@ -407,6 +431,14 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 			::GetModuleFileNameW(g_instance, moduleFileName, MAX_PATH);
 			::LoadLibraryW(moduleFileName);
 
+			// 設定ファイルを読み込む。
+			WCHAR fileName[MAX_PATH] = {};
+			::GetModuleFileNameW(g_instance, fileName, MAX_PATH);
+			::PathRenameExtensionW(fileName, L".ini");
+			MY_TRACE_WSTR(fileName);
+			g_settingsFile = FileUpdateCheckerPtr(new FileUpdateChecker(fileName));
+			loadSettings(g_settingsFile->getFileName());
+
 			initHook();
 
 			break;
@@ -414,6 +446,8 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 	case DLL_PROCESS_DETACH:
 		{
 			MY_TRACE(_T("DLL_PROCESS_DETACH\n"));
+
+			g_settingsFile = 0;
 
 			termHook();
 
@@ -442,6 +476,28 @@ IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR classN
 	return true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
 }
 
+void moveTargetMarkWindow(const DialogInfo& di, FilterHolder filter, BOOL show)
+{
+	LPCSTR name = filter.getName();
+//	MY_TRACE_STR(name);
+
+	g_targetMarkWindow->Render(name, TargetMark::g_alpha);
+
+	RECT rc; di.getFilterRect(filter, &rc);
+	POINT pos;
+	pos.x = (rc.left + rc.right) / 2;
+	pos.y = (rc.top + rc.bottom) / 2;
+	::ClientToScreen(di.getDialog(), &pos);
+	if (show)
+	{
+		g_targetMarkWindow->Show(pos.x, pos.y);
+	}
+	else
+	{
+		g_targetMarkWindow->Move(pos.x, pos.y);
+	}
+}
+
 void beginDrag(const DialogInfo& di)
 {
 	MY_TRACE(_T("beginDrag()\n"));
@@ -453,6 +509,9 @@ void beginDrag(const DialogInfo& di)
 
 	// ドラッグ元をマークする。
 	showMarkWindow(g_dragSrcWindow, di, g_srcFilter);
+
+	// ターゲットマークを表示する。
+	moveTargetMarkWindow(di, g_srcFilter, TRUE);
 }
 
 void endDrag()
@@ -463,6 +522,30 @@ void endDrag()
 	g_isFilterDragging = FALSE;
 	hideMarkWindow(g_dragSrcWindow);
 	hideMarkWindow(g_dragDstWindow);
+
+	g_targetMarkWindow->Hide();
+}
+
+void moveDrag(const DialogInfo& di)
+{
+	MY_TRACE(_T("moveDrag()\n"));
+
+	if (g_dstFilter != g_srcFilter)
+	{
+		// ドラッグ先をマークする。
+		showMarkWindow(g_dragDstWindow, di, g_dstFilter);
+	}
+	else
+	{
+		// ドラッグ先のマークを隠す。
+		hideMarkWindow(g_dragDstWindow);
+	}
+
+	// ドラッグ元のマークを再配置する。
+	showMarkWindow(g_dragSrcWindow, di, g_srcFilter);
+
+	// ターゲットマークを動かす。
+	moveTargetMarkWindow(di, g_dstFilter, FALSE);
 }
 
 IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam))
@@ -649,24 +732,18 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				CursorPos pos(hwnd);
 //				MY_TRACE_POINT(pos);
 
+				FilterHolder oldDstFilter = g_dstFilter;
+
 				// マウスカーソルの位置にあるドラッグ元フィルタを取得する。
 				g_dstFilter = di.getDstFilter(pos, g_srcObject);
 				if (!g_dstFilter.isValid()) g_dstFilter = g_srcFilter;
 //				MY_TRACE_FILTER_HOLDER(g_dstFilter);
 
-				if (g_dstFilter != g_srcFilter)
+				if (g_dstFilter != oldDstFilter)
 				{
-					// ドラッグ先をマークする。
-					showMarkWindow(g_dragDstWindow, di, g_dstFilter);
+					// マークを動かす。
+					moveDrag(di);
 				}
-				else
-				{
-					// ドラッグ先のマークを隠す。
-					hideMarkWindow(g_dragDstWindow);
-				}
-
-				// ドラッグ元のマークを再配置する。
-				showMarkWindow(g_dragSrcWindow, di, g_srcFilter);
 			}
 
 			break;
@@ -729,7 +806,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 6.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 7.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
@@ -808,12 +885,16 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, void *e
 			// このフィルタのウィンドウハンドルを保存しておく。
 			g_filterWindow = fp->hwnd;
 			MY_TRACE_HEX(g_filterWindow);
+			::SetTimer(g_filterWindow, TIMER_ID_CHECK_UPDATE, 1000, 0);
 
 			// マークウィンドウを作成する。
 			g_dragSrcWindow = createMarkWindow(RGB(0x00, 0x00, 0xff));
 			MY_TRACE_HEX(g_dragSrcWindow);
 			g_dragDstWindow = createMarkWindow(RGB(0xff, 0x00, 0x00));
 			MY_TRACE_HEX(g_dragDstWindow);
+
+			g_targetMarkWindow = TargetMarkWindowPtr(new TargetMarkWindow());
+			g_targetMarkWindow->Create(g_instance);
 
 			break;
 		}
@@ -824,6 +905,9 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, void *e
 			// マークウィンドウを削除する。
 			::DestroyWindow(g_dragSrcWindow), g_dragSrcWindow = 0;
 			::DestroyWindow(g_dragDstWindow), g_dragDstWindow = 0;
+
+			g_targetMarkWindow->Destroy();
+			g_targetMarkWindow = 0;
 
 			break;
 		}
@@ -847,6 +931,16 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, void *e
 			{
 				MY_TRACE(_T("フレームを更新します\n"));
 				return TRUE;
+			}
+
+			break;
+		}
+	case WM_TIMER:
+		{
+			if (wParam == TIMER_ID_CHECK_UPDATE)
+			{
+				if (g_settingsFile->isFileUpdated())
+					loadSettings(g_settingsFile->getFileName());
 			}
 
 			break;
