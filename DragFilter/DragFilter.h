@@ -44,15 +44,8 @@ DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT
 //---------------------------------------------------------------------
 // Internal Function and Variable
 
+DECLARE_HOOK_PROC(void, CDECL, SwapFilter, (int objectIndex, int filterIndex, int relativeIndex));
 DECLARE_HOOK_PROC(void, CDECL, Unknown1, (int objectIndex, int filterIndex));
-
-DECLARE_INTERNAL_PROC(int, CDECL, GetFilterIndexFromY, (int y));
-DECLARE_INTERNAL_PROC(void, CDECL, PushUndo, ());
-DECLARE_INTERNAL_PROC(void, CDECL, CreateUndo, (int objectIndex, BOOL flag));
-DECLARE_INTERNAL_PROC(void, CDECL, SwapFilter, (int objectIndex, int filterIndex, int relativeIndex));
-DECLARE_INTERNAL_PROC(void, CDECL, DrawObjectDialog, (int objectIndex));
-DECLARE_INTERNAL_PROC(void, CDECL, HideControls, ());
-DECLARE_INTERNAL_PROC(BOOL, CDECL, ShowControls, (int objectIndex));
 
 extern HMENU* g_menu[5];
 extern auls::EXEDIT_OBJECT** g_objectTable;
@@ -61,7 +54,6 @@ extern int* g_objectIndex;
 extern int* g_filterIndex;
 extern auls::EXEDIT_OBJECT** g_objectData;
 extern BYTE** g_objectExdata;
-extern int* g_filterPosY;
 extern int* g_nextObject;
 
 int Exedit_GetCurrentObjectIndex();

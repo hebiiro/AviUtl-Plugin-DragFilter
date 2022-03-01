@@ -75,6 +75,45 @@ int Exedit_GetNextObjectIndex(int objectIndex)
 
 //---------------------------------------------------------------------
 
+void moveFilter(int objectIndex)
+{
+	int srcFilterIndex = g_srcFilter.getFilterIndex();
+	MY_TRACE_INT(srcFilterIndex);
+
+	int dstFilterIndex = g_dstFilter.getFilterIndex();
+	MY_TRACE_INT(dstFilterIndex);
+
+	// フィルタのインデックスの差分を取得する。
+	int sub = dstFilterIndex - srcFilterIndex;
+	MY_TRACE_INT(sub);
+
+	// フィルタを移動する。
+	if (sub < 0)
+	{
+		// 上に移動
+		for (int i = sub; i < 0; i++)
+			true_SwapFilter(objectIndex, srcFilterIndex--, -1);
+	}
+	else
+	{
+		// 下に移動
+		for (int i = sub; i > 0; i--)
+			true_SwapFilter(objectIndex, srcFilterIndex++, 1);
+	}
+}
+
+BOOL g_moveFilterFlag = FALSE;
+
+IMPLEMENT_HOOK_PROC_NULL(void, CDECL, SwapFilter, (int objectIndex, int filterIndex, int relativeIndex))
+{
+	if (g_moveFilterFlag)
+		moveFilter(objectIndex);
+	else
+		true_SwapFilter(objectIndex, filterIndex, relativeIndex);
+}
+
+//---------------------------------------------------------------------
+
 void createClone(UINT createCloneId, int origObjectIndex, int newFilterIndex)
 {
 	MY_TRACE(_T("複製を作成します\n"));
@@ -172,7 +211,7 @@ void createClone(UINT createCloneId, int origObjectIndex, int newFilterIndex)
 			// コピー元のすぐ上に移動
 			int c = dstFilterIndex - srcFilterIndex;
 			for (int i = 0; i < c; i++)
-				SwapFilter(origObjectIndex, dstFilterIndex--, -1);
+				true_SwapFilter(origObjectIndex, dstFilterIndex--, -1);
 
 			break;
 		}
@@ -182,7 +221,7 @@ void createClone(UINT createCloneId, int origObjectIndex, int newFilterIndex)
 			// コピー元のすぐ下に移動
 			int c = dstFilterIndex - srcFilterIndex - 1;
 			for (int i = 0; i < c; i++)
-				SwapFilter(origObjectIndex, dstFilterIndex--, -1);
+				true_SwapFilter(origObjectIndex, dstFilterIndex--, -1);
 
 			break;
 		}
@@ -332,21 +371,15 @@ void initExeditHook(HWND hwnd)
 {
 	MY_TRACE(_T("initExeditHook(0x%08X)\n"), hwnd);
 
-	// 拡張編集のオブジェクトダイアログのハンドルを保存しておく。
+	// 拡張編集のオブジェクトダイアログのハンドルを取得しておく。
 	g_exeditObjectDialog = hwnd;
-	// 拡張編集のオブジェクトダイアログのウィンドウプロシージャを保存しておく。
+	// 拡張編集のオブジェクトダイアログのウィンドウプロシージャを取得しておく。
 	true_Exedit_ObjectDialog_WndProc = (WNDPROC)::GetClassLong(hwnd, GCL_WNDPROC);
 
 	// 拡張編集の関数や変数を取得する。
 	DWORD exedit = (DWORD)::GetModuleHandle(_T("exedit.auf"));
+	true_SwapFilter = (Type_SwapFilter)(exedit + 0x33B30);
 	true_Unknown1 = (Type_Unknown1)(exedit + 0x34FF0);
-	GetFilterIndexFromY = (Type_GetFilterIndexFromY)(exedit + 0x2CC30);
-	PushUndo = (Type_PushUndo)(exedit + 0x8D150);
-	CreateUndo = (Type_CreateUndo)(exedit + 0x8D290);
-	SwapFilter = (Type_SwapFilter)(exedit + 0x33B30);
-	DrawObjectDialog = (Type_DrawObjectDialog)(exedit + 0x39490);
-	HideControls = (Type_HideControls)(exedit + 0x30500);
-	ShowControls = (Type_ShowControls)(exedit + 0x305E0);
 	g_menu[0] = (HMENU*)(exedit + 0x158D20);
 	g_menu[1] = (HMENU*)(exedit + 0x158D24);
 	g_menu[2] = (HMENU*)(exedit + 0x158D2C);
@@ -358,7 +391,6 @@ void initExeditHook(HWND hwnd)
 	g_filterIndex = (int*)(exedit + 0x14965C);
 	g_objectData = (auls::EXEDIT_OBJECT**)(exedit + 0x1E0FA4);
 	g_objectExdata = (BYTE**)(exedit + 0x1E0FA8);
-	g_filterPosY = (int*)(exedit + 0x196714);
 	g_nextObject = (int*)(exedit + 0x1592d8);
 
 	// 拡張編集の関数をフックする。
@@ -366,6 +398,7 @@ void initExeditHook(HWND hwnd)
 	DetourUpdateThread(::GetCurrentThread());
 
 	ATTACH_HOOK_PROC(Exedit_ObjectDialog_WndProc);
+	ATTACH_HOOK_PROC(SwapFilter);
 	ATTACH_HOOK_PROC(Unknown1);
 
 	if (DetourTransactionCommit() == NO_ERROR)
@@ -668,34 +701,9 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 				{
 					MY_TRACE(_T("ドラッグ先にフィルタを移動します\n"));
 
-					int objectIndex = object.getObjectIndex();
-
-					// Undo を構築する。
-					PushUndo();
-					CreateUndo(objectIndex, 1);
-
-					// フィルタを移動する。
-					if (sub < 0)
-					{
-						// 上に移動
-						for (int i = sub; i < 0; i++)
-							SwapFilter(objectIndex, srcFilterIndex--, -1);
-					}
-					else
-					{
-						// 下に移動
-						for (int i = sub; i > 0; i--)
-							SwapFilter(objectIndex, srcFilterIndex++, 1);
-					}
-
-					// ダイアログを再描画する。
-					DrawObjectDialog(objectIndex);
-					// コントロール群を再配置する。
-					HideControls();
-					ShowControls(*g_objectIndex);
-
-					// フレームの再描画を促す。
-					::PostMessage(g_filterWindow, WM_FILTER_COMMAND, 0, 0);
+					g_moveFilterFlag = TRUE;
+					::SendMessage(hwnd, WM_COMMAND, sub < 0 ? 1116 : 1117, 0);
+					g_moveFilterFlag = FALSE;
 				}
 			}
 
@@ -806,7 +814,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 7.0.1 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 8.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{

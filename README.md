@@ -1,5 +1,6 @@
 # AviUtl プラグイン - フィルタドラッグ移動
 
+* version 8.0.0 by 蛇色 - 2022/03/01 設定ダイアログ画面サイズ固定化プラグイン使用時の不具合を減少
 * version 7.0.1 by 蛇色 - 2022/02/25 アニメーション効果の名前が取得できていなかった問題を修正
 * version 7.0.0 by 蛇色 - 2022/02/22 ターゲットマークを追加
 * version 6.0.0 by 蛇色 - 2022/02/18 WideDialog.auf に対応
@@ -46,8 +47,8 @@ DragFilter.ini をテキストエディタで編集します。AviUtl を再起�
 ```ini
 [TargetMark]
 alpha=192 ; ターゲットマーク全体のアルファ値。
-penColor=192,0,0,0 ; ペンの色。
-penWidth=4.0f ; ペンの幅。
+penColor=192,0,0,0 ; ペンの色。#argb(16進数)、#aarrggbb(16進数)、a,r,g,b(10進数) の形式で指定する。
+penWidth=4.0 ; ペンの幅。
 brushColor=255,255,255,255 ; ブラシの色。
 base=16 ; 描画アイテムの基準サイズ。
 width=8 ; 描画アイテムの幅。
@@ -61,8 +62,8 @@ beginMoveY=100 ; 表示開始時の移動アニメーション起点。
 ## 動作確認
 
 * (必須) AviUtl 1.10 & 拡張編集 0.92 http://spring-fragrance.mints.ne.jp/aviutl/
-* (共存確認) patch.aul r11 https://www.nicovideo.jp/watch/sm40027189
+* (共存確認) patch.aul r14 https://www.nicovideo.jp/watch/sm40087155
 * (共存確認) eclipse_fast 1.00 https://www.nicovideo.jp/watch/sm39756003
 * (共存確認) WideDialog.auf 1.03 https://www.nicovideo.jp/watch/sm39708120
 * (共存確認) 設定ダイアログ画面サイズ固定化プラグイン 2.6 https://github.com/amate/PropertyWindowFixerPlugin
-	* ただし、eclipse_fast、bakusoku.auf、「エディットボックス最適化」などのプラグインが別途必要。
+	* ただし、patch.aul、eclipse_fast、bakusoku.auf、「エディットボックス最適化」などのプラグインが別途必要。
