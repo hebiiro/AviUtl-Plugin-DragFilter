@@ -20,7 +20,6 @@ HINSTANCE g_instance = 0; // この DLL のインスタンスハンドル。
 HWND g_filterWindow = 0; // このプラグインのウィンドウハンドル。
 HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
 HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
-HWND g_exeditObjectDialog = 0; // 拡張編集のオブジェクトダイアログのハンドル。
 FileUpdateCheckerPtr g_settingsFile;
 TargetMarkWindowPtr g_targetMarkWindow;
 
@@ -29,6 +28,8 @@ FilterHolder g_srcFilter; // ドラッグ元のフィルタ。
 FilterHolder g_dstFilter; // ドラッグ先のフィルタ。
 BOOL g_isFilterDragging = FALSE; // ドラッグ中か判定するためのフラグ。
 
+HWND* g_exeditWindow = 0; // 拡張編集ウィンドウ。
+HWND* g_settingDialog = 0; // 設定ダイアログ。
 HMENU* g_menu[5] = {}; // 拡張編集のメニューへのポインタ。
 auls::EXEDIT_OBJECT** g_objectTable = 0;
 auls::EXEDIT_FILTER** g_filterTable = 0;
@@ -36,7 +37,6 @@ int* g_objectIndex = 0; // カレントオブジェクトのインデックス�
 int* g_filterIndex = 0; // カレントフィルタのインデックスへのポインタ。
 auls::EXEDIT_OBJECT** g_objectData = 0; // オブジェクトデータへのポインタ。
 BYTE** g_objectExdata = 0; // オブジェクト拡張データへのポインタ。
-int* g_filterPosY = 0; // フィルタの Y 座標配列へのポインタ。
 int* g_nextObject = 0; // 次のオブジェクトの配列へのポインタ。
 
 int Exedit_GetCurrentObjectIndex()
@@ -327,7 +327,7 @@ void showMarkWindow(HWND hwnd, const DialogInfo& di, FilterHolder filter)
 	RECT rc; di.getFilterRect(filter, &rc);
 	POINT pos = { rc.left, rc.top };
 	SIZE size = { rc.right - rc.left, rc.bottom - rc.top };
-	::ClientToScreen(g_exeditObjectDialog, &pos);
+	::ClientToScreen(*g_settingDialog, &pos);
 	::SetLayeredWindowAttributes(hwnd, 0, 96, LWA_ALPHA);
 	::SetWindowPos(hwnd, HWND_TOPMOST, pos.x, pos.y, size.cx, size.cy, SWP_NOACTIVATE | SWP_SHOWWINDOW);
 }
@@ -345,10 +345,36 @@ void initHook()
 {
 	MY_TRACE(_T("initHook()\n"));
 
+	DWORD exedit = (DWORD)::GetModuleHandle(_T("exedit.auf"));
+
+	// 拡張編集の関数や変数を取得する。
+	g_exeditWindow = (HWND*)(exedit + 0x177A44);
+	g_settingDialog = (HWND*)(exedit + 0x1539C8);
+	g_menu[0] = (HMENU*)(exedit + 0x158D20);
+	g_menu[1] = (HMENU*)(exedit + 0x158D24);
+	g_menu[2] = (HMENU*)(exedit + 0x158D2C);
+	g_menu[3] = (HMENU*)(exedit + 0x167D40);
+	g_menu[4] = (HMENU*)(exedit + 0x167D44);
+	g_objectTable = (auls::EXEDIT_OBJECT**)(exedit + 0x168FA8);
+	g_filterTable = (auls::EXEDIT_FILTER**)(exedit + 0x187C98);
+	g_objectIndex = (int*)(exedit + 0x177A10);
+	g_filterIndex = (int*)(exedit + 0x14965C);
+	g_objectData = (auls::EXEDIT_OBJECT**)(exedit + 0x1E0FA4);
+	g_objectExdata = (BYTE**)(exedit + 0x1E0FA8);
+	g_nextObject = (int*)(exedit + 0x1592d8);
+	true_SwapFilter = (Type_SwapFilter)(exedit + 0x33B30);
+	true_Unknown1 = (Type_Unknown1)(exedit + 0x34FF0);
+
+	true_Exedit_SettingDialog_WndProc = writeAbsoluteAddress(
+		exedit + 0x2E800 + 4, hook_Exedit_SettingDialog_WndProc);
+	MY_TRACE_HEX(true_Exedit_SettingDialog_WndProc);
+	MY_TRACE_HEX(hook_Exedit_SettingDialog_WndProc);
+
 	DetourTransactionBegin();
 	DetourUpdateThread(::GetCurrentThread());
 
-	ATTACH_HOOK_PROC(CreateWindowExA);
+	ATTACH_HOOK_PROC(SwapFilter);
+	ATTACH_HOOK_PROC(Unknown1);
 
 	if (DetourTransactionCommit() == NO_ERROR)
 	{
@@ -364,63 +390,6 @@ void initHook()
 void termHook()
 {
 	MY_TRACE(_T("termHook()\n"));
-}
-
-// 拡張編集のフックをセットする。
-void initExeditHook(HWND hwnd)
-{
-	MY_TRACE(_T("initExeditHook(0x%08X)\n"), hwnd);
-
-	// 拡張編集のオブジェクトダイアログのハンドルを取得しておく。
-	g_exeditObjectDialog = hwnd;
-	// 拡張編集のオブジェクトダイアログのウィンドウプロシージャを取得しておく。
-	true_Exedit_ObjectDialog_WndProc = (WNDPROC)::GetClassLong(hwnd, GCL_WNDPROC);
-
-	// 拡張編集の関数や変数を取得する。
-	DWORD exedit = (DWORD)::GetModuleHandle(_T("exedit.auf"));
-	true_SwapFilter = (Type_SwapFilter)(exedit + 0x33B30);
-	true_Unknown1 = (Type_Unknown1)(exedit + 0x34FF0);
-	g_menu[0] = (HMENU*)(exedit + 0x158D20);
-	g_menu[1] = (HMENU*)(exedit + 0x158D24);
-	g_menu[2] = (HMENU*)(exedit + 0x158D2C);
-	g_menu[3] = (HMENU*)(exedit + 0x167D40);
-	g_menu[4] = (HMENU*)(exedit + 0x167D44);
-	g_objectTable = (auls::EXEDIT_OBJECT**)(exedit + 0x168FA8);
-	g_filterTable = (auls::EXEDIT_FILTER**)(exedit + 0x187C98);
-	g_objectIndex = (int*)(exedit + 0x177A10);
-	g_filterIndex = (int*)(exedit + 0x14965C);
-	g_objectData = (auls::EXEDIT_OBJECT**)(exedit + 0x1E0FA4);
-	g_objectExdata = (BYTE**)(exedit + 0x1E0FA8);
-	g_nextObject = (int*)(exedit + 0x1592d8);
-
-	// 拡張編集の関数をフックする。
-	DetourTransactionBegin();
-	DetourUpdateThread(::GetCurrentThread());
-
-	ATTACH_HOOK_PROC(Exedit_ObjectDialog_WndProc);
-	ATTACH_HOOK_PROC(SwapFilter);
-	ATTACH_HOOK_PROC(Unknown1);
-
-	if (DetourTransactionCommit() == NO_ERROR)
-	{
-		MY_TRACE(_T("拡張編集のフックに成功しました\n"));
-	}
-	else
-	{
-		MY_TRACE(_T("拡張編集のフックに失敗しました\n"));
-	}
-#if 1
-	// コンテキストメニューを拡張するならこうする。
-	for (int i = 0; i < sizeof(g_menu) / sizeof(g_menu[0]); i++)
-	{
-		HMENU menu = *g_menu[i];
-		HMENU subMenu = ::GetSubMenu(menu, 0);
-		::AppendMenu(subMenu, MF_SEPARATOR, 0, 0);
-		::AppendMenu(subMenu, MF_STRING, ID_CREATE_CLONE, _T("完全な複製を隣に作成"));
-		::AppendMenu(subMenu, MF_STRING, ID_CREATE_SAME_ABOVE, _T("同じフィルタ効果を上に作成"));
-		::AppendMenu(subMenu, MF_STRING, ID_CREATE_SAME_BELOW, _T("同じフィルタ効果を下に作成"));
-	}
-#endif
 }
 
 // 設定ファイルを読み込む。
@@ -464,25 +433,11 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 			::GetModuleFileNameW(g_instance, moduleFileName, MAX_PATH);
 			::LoadLibraryW(moduleFileName);
 
-			// 設定ファイルを読み込む。
-			WCHAR fileName[MAX_PATH] = {};
-			::GetModuleFileNameW(g_instance, fileName, MAX_PATH);
-			::PathRenameExtensionW(fileName, L".ini");
-			MY_TRACE_WSTR(fileName);
-			g_settingsFile = FileUpdateCheckerPtr(new FileUpdateChecker(fileName));
-			loadSettings(g_settingsFile->getFileName());
-
-			initHook();
-
 			break;
 		}
 	case DLL_PROCESS_DETACH:
 		{
 			MY_TRACE(_T("DLL_PROCESS_DETACH\n"));
-
-			g_settingsFile = 0;
-
-			termHook();
 
 			break;
 		}
@@ -492,22 +447,6 @@ EXTERN_C BOOL APIENTRY DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 }
 
 //---------------------------------------------------------------------
-
-IMPLEMENT_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR className, LPCSTR windowName, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE instance, LPVOID param))
-{
-	if ((DWORD)className > 0x0000FFFFUL)
-	if (::lstrcmpiA(className, "ExtendedFilterClass") == 0)
-	{
-		HWND result = true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
-
-		// 拡張編集をフックする。
-		initExeditHook(result);
-
-		return result;
-	}
-
-	return true_CreateWindowExA(exStyle, className, windowName, style, x, y, w, h, parent, menu, instance, param);
-}
 
 void moveTargetMarkWindow(const DialogInfo& di, FilterHolder filter, BOOL show)
 {
@@ -581,10 +520,27 @@ void moveDrag(const DialogInfo& di)
 	moveTargetMarkWindow(di, g_dstFilter, FALSE);
 }
 
-IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam))
+IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_SettingDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam))
 {
 	switch (message)
 	{
+	case WM_CREATE:
+		{
+			MY_TRACE(_T("WM_CREATE\n"));
+
+			// 設定ダイアログのコンテキストメニューを拡張する。
+			for (int i = 0; i < sizeof(g_menu) / sizeof(g_menu[0]); i++)
+			{
+				HMENU menu = *g_menu[i];
+				HMENU subMenu = ::GetSubMenu(menu, 0);
+				::AppendMenu(subMenu, MF_SEPARATOR, 0, 0);
+				::AppendMenu(subMenu, MF_STRING, ID_CREATE_CLONE, _T("完全な複製を隣に作成"));
+				::AppendMenu(subMenu, MF_STRING, ID_CREATE_SAME_ABOVE, _T("同じフィルタ効果を上に作成"));
+				::AppendMenu(subMenu, MF_STRING, ID_CREATE_SAME_BELOW, _T("同じフィルタ効果を下に作成"));
+			}
+
+			break;
+		}
 	case WM_SETCURSOR:
 		{
 			if ((HWND)wParam == hwnd && LOWORD(lParam) == HTCLIENT)
@@ -679,13 +635,6 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 					::ReleaseCapture(); endDrag();
 					break;
 				}
-
-				// 中間点があるか調べる。
-				int midptLeader = object.getObject()->index_midpt_leader;
-				MY_TRACE_INT(midptLeader);
-				if (midptLeader >= 0)
-					object = ObjectHolder(midptLeader); // 中間点がある場合は中間点元のオブジェクトを取得
-				MY_TRACE_OBJECT_HOLDER(object);
 
 				int srcFilterIndex = g_srcFilter.getFilterIndex();
 				MY_TRACE_INT(srcFilterIndex);
@@ -795,7 +744,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 
 					// フィルタを作成するコマンドを発行する。
 					g_createCloneId = wParam;
-					LRESULT result = true_Exedit_ObjectDialog_WndProc(hwnd, message, 2000 + filterId, lParam);
+					LRESULT result = true_Exedit_SettingDialog_WndProc(hwnd, message, 2000 + filterId, lParam);
 					g_createCloneId = 0;
 					return result;
 				}
@@ -805,7 +754,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 		}
 	}
 
-	return true_Exedit_ObjectDialog_WndProc(hwnd, message, wParam, lParam);
+	return true_Exedit_SettingDialog_WndProc(hwnd, message, wParam, lParam);
 }
 
 //---------------------------------------------------------------------
@@ -814,7 +763,7 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwn
 EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 {
 	static TCHAR g_filterName[] = TEXT("フィルタドラッグ移動");
-	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 8.0.0 by 蛇色");
+	static TCHAR g_filterInformation[] = TEXT("フィルタドラッグ移動 version 9.0.0 by 蛇色");
 
 	static FILTER_DLL g_filter =
 	{
@@ -830,8 +779,8 @@ EXTERN_C FILTER_DLL __declspec(dllexport) * __stdcall GetFilterTable(void)
 		NULL, NULL,
 		NULL, NULL, NULL,
 		NULL,//func_proc,
-		NULL,//func_init,
-		NULL,//func_exit,
+		func_init,
+		func_exit,
 		NULL,
 		func_WndProc,
 		NULL, NULL,
@@ -854,6 +803,16 @@ BOOL func_init(FILTER *fp)
 {
 	MY_TRACE(_T("func_init()\n"));
 
+	// 設定ファイルを読み込む。
+	WCHAR fileName[MAX_PATH] = {};
+	::GetModuleFileNameW(g_instance, fileName, MAX_PATH);
+	::PathRenameExtensionW(fileName, L".ini");
+	MY_TRACE_WSTR(fileName);
+	g_settingsFile = FileUpdateCheckerPtr(new FileUpdateChecker(fileName));
+	loadSettings(g_settingsFile->getFileName());
+
+	initHook();
+
 	return TRUE;
 }
 
@@ -863,6 +822,10 @@ BOOL func_init(FILTER *fp)
 BOOL func_exit(FILTER *fp)
 {
 	MY_TRACE(_T("func_exit()\n"));
+
+	g_settingsFile = 0;
+
+	termHook();
 
 	return TRUE;
 }

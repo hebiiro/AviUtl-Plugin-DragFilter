@@ -35,11 +35,26 @@ const UINT ID_CREATE_SAME_BELOW		= 12022;
 const UINT TIMER_ID_CHECK_UPDATE	= 1000;
 
 //---------------------------------------------------------------------
+// Function
+
+// 絶対アドレスを書き換える。
+template<class T>
+inline T writeAbsoluteAddress(DWORD address, T x)
+{
+	// 絶対アドレスから読み込む。
+	T retValue = 0;
+	::ReadProcessMemory(::GetCurrentProcess(), (LPVOID)address, &retValue, sizeof(retValue), NULL);
+	// 絶対アドレスを書き換える。
+	::WriteProcessMemory(::GetCurrentProcess(), (LPVOID)address, &x, sizeof(x), NULL);
+	// 命令キャッシュをフラッシュする。
+	::FlushInstructionCache(::GetCurrentProcess(), (LPVOID)address, sizeof(x));
+	return retValue;
+}
+
+//---------------------------------------------------------------------
 // Api Hook
 
-DECLARE_HOOK_PROC(HWND, WINAPI, CreateWindowExA, (DWORD exStyle, LPCSTR className, LPCSTR windowName, DWORD style, int x, int y, int w, int h, HWND parent, HMENU menu, HINSTANCE instance, LPVOID param));
-
-DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam));
+DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_SettingDialog_WndProc, (HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam));
 
 //---------------------------------------------------------------------
 // Internal Function and Variable
@@ -47,6 +62,8 @@ DECLARE_HOOK_PROC(LRESULT, WINAPI, Exedit_ObjectDialog_WndProc, (HWND hwnd, UINT
 DECLARE_HOOK_PROC(void, CDECL, SwapFilter, (int objectIndex, int filterIndex, int relativeIndex));
 DECLARE_HOOK_PROC(void, CDECL, Unknown1, (int objectIndex, int filterIndex));
 
+extern HWND* g_exeditWindow;
+extern HWND* g_settingDialog;
 extern HMENU* g_menu[5];
 extern auls::EXEDIT_OBJECT** g_objectTable;
 extern auls::EXEDIT_FILTER** g_filterTable;
