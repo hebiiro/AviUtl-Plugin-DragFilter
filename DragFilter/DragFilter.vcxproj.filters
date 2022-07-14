@@ -1,30 +1,56 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClInclude Include="pch.h" />
-    <ClInclude Include="..\Common\MyMSXML.h">
-      <Filter>Common</Filter>
-    </ClInclude>
-    <ClInclude Include="..\Common\MyTracer.h">
-      <Filter>Common</Filter>
-    </ClInclude>
     <ClInclude Include="DragFilter.h" />
-    <ClInclude Include="DragFilter_Classes.h" />
-    <ClInclude Include="Target.h" />
-    <ClInclude Include="..\Common\Profile.h">
+    <ClInclude Include="..\..\Common\AviUtlInternal.h">
       <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Common\Profile.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Common\Tracer.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\Common\Hook.h">
+      <Filter>Common</Filter>
+    </ClInclude>
+    <ClInclude Include="Target.h">
+      <Filter>Sub</Filter>
+    </ClInclude>
+    <ClInclude Include="Classes.h">
+      <Filter>Sub</Filter>
+    </ClInclude>
+    <ClInclude Include="pch.h">
+      <Filter>Base</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="pch.cpp" />
     <ClCompile Include="DragFilter.cpp" />
-  </ItemGroup>
-  <ItemGroup>
-    <None Include="DragFilter.def" />
+    <ClCompile Include="DragFilter_Filter.cpp" />
+    <ClCompile Include="Target.cpp">
+      <Filter>Sub</Filter>
+    </ClCompile>
+    <ClCompile Include="Classes.cpp">
+      <Filter>Sub</Filter>
+    </ClCompile>
+    <ClCompile Include="pch.cpp">
+      <Filter>Base</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <Filter Include="Common">
-      <UniqueIdentifier>{177f322b-85e3-40d8-98e7-bca29a16eb22}</UniqueIdentifier>
+      <UniqueIdentifier>{39345beb-6019-466f-861e-2d2c2cb6ffe2}</UniqueIdentifier>
     </Filter>
+    <Filter Include="Sub">
+      <UniqueIdentifier>{9fab7358-9fb8-4b4b-b901-22d221888b39}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Base">
+      <UniqueIdentifier>{69208df6-1e6d-4d36-afb1-619dfd1e05d0}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="DragFilter.def">
+      <Filter>Base</Filter>
+    </None>
   </ItemGroup>
 </Project>
