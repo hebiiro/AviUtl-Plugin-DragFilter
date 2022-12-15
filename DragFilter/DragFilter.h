@@ -9,8 +9,6 @@ const UINT ID_CREATE_CLONE			= 12020;
 const UINT ID_CREATE_SAME_ABOVE		= 12021;
 const UINT ID_CREATE_SAME_BELOW		= 12022;
 
-const UINT TIMER_ID_CHECK_UPDATE	= 1000;
-
 //---------------------------------------------------------------------
 
 typedef std::shared_ptr<FileUpdateChecker> FileUpdateCheckerPtr;
@@ -19,11 +17,15 @@ typedef std::shared_ptr<TargetMarkWindow> TargetMarkWindowPtr;
 extern AviUtlInternal g_auin;
 
 extern HINSTANCE g_instance; // この DLL のインスタンスハンドル。
+extern UINT g_checkUpdateTimerId;
 extern HWND g_filterWindow; // このプラグインのウィンドウハンドル。
 extern HWND g_dragSrcWindow; // ドラッグ元をマークするウィンドウ。
 extern HWND g_dragDstWindow; // ドラッグ先をマークするウィンドウ。
 extern FileUpdateCheckerPtr g_settingsFile;
 extern TargetMarkWindowPtr g_targetMarkWindow;
+
+extern COLORREF g_dragSrcColor; // ドラッグ元の色。
+extern COLORREF g_dragDstColor; // ドラッグ先の色。
 
 extern ObjectHolder g_srcObject; // ドラッグ元のオブジェクト。
 extern FilterHolder g_srcFilter; // ドラッグ元のフィルタ。

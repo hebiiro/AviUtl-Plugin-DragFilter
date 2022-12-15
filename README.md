@@ -42,10 +42,14 @@ fontSize=32.0 ; フォントの大きさ。
 rotate=7.77 ; 傾ける角度。
 beginMoveX=0 ; 表示開始時の移動アニメーション起点。
 beginMoveY=100 ; 表示開始時の移動アニメーション起点。
+[Settings]
+dragSrcColor=0,0,255 ; ドラッグ元の色。
+dragDstColor=255,0,0 ; ドラッグ先の色。
 ```
 
 ## 更新履歴
 
+* 9.2.0 - 2022/12/15 ドラッグ元とドラッグ先の色を変更できるように修正
 * 9.1.0 - 2022/07/14 リファクタリング
 * 9.0.0 - 2022/04/13 リファクタリング
 * 8.0.0 - 2022/03/01 設定ダイアログ画面サイズ固定化プラグイン使用時の不具合を減少
@@ -67,7 +71,7 @@ beginMoveY=100 ; 表示開始時の移動アニメーション起点。
 ## 動作確認
 
 * (必須) AviUtl 1.10 & 拡張編集 0.92 http://spring-fragrance.mints.ne.jp/aviutl/
-* (共存確認) patch.aul r41 https://scrapbox.io/ePi5131/patch.aul
+* (共存確認) patch.aul r42 https://scrapbox.io/ePi5131/patch.aul
 
 ## クレジット
 

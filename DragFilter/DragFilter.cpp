@@ -14,11 +14,15 @@ void ___outputLog(LPCTSTR text, LPCTSTR output)
 AviUtlInternal g_auin;
 
 HINSTANCE g_instance = 0; // この DLL のインスタンスハンドル。
+UINT g_checkUpdateTimerId = (UINT)&g_checkUpdateTimerId;
 HWND g_filterWindow = 0; // このプラグインのウィンドウハンドル。
 HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
 HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
 FileUpdateCheckerPtr g_settingsFile;
 TargetMarkWindowPtr g_targetMarkWindow;
+
+COLORREF g_dragSrcColor = RGB(0x00, 0x00, 0xff);
+COLORREF g_dragDstColor = RGB(0xff, 0x00, 0x00);
 
 ObjectHolder g_srcObject; // ドラッグ元のオブジェクト。
 FilterHolder g_srcFilter; // ドラッグ元のフィルタ。
@@ -341,6 +345,9 @@ void loadSettings(LPCWSTR fileName)
 	getPrivateProfileReal(fileName, L"TargetMark", L"rotate", TargetMark::g_rotate);
 	getPrivateProfileInt(fileName, L"TargetMark", L"beginMoveX", TargetMark::g_beginMove.X);
 	getPrivateProfileInt(fileName, L"TargetMark", L"beginMoveY", TargetMark::g_beginMove.Y);
+
+	getPrivateProfileColor(fileName, L"Settings", L"dragSrcColor", g_dragSrcColor);
+	getPrivateProfileColor(fileName, L"Settings", L"dragDstColor", g_dragDstColor);
 }
 
 //--------------------------------------------------------------------

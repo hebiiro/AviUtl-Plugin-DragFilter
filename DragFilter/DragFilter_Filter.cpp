@@ -44,19 +44,19 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 
 	switch (message)
 	{
-	case AviUtl::detail::FilterPluginWindowMessage::Init:
+	case AviUtl::FilterPlugin::WindowMessage::Init:
 		{
 			MY_TRACE(_T("func_WndProc(Init, 0x%08X, 0x%08X)\n"), wParam, lParam);
 
 			// このフィルタのウィンドウハンドルを保存しておく。
 			g_filterWindow = fp->hwnd;
 			MY_TRACE_HEX(g_filterWindow);
-			::SetTimer(g_filterWindow, TIMER_ID_CHECK_UPDATE, 1000, 0);
+			::SetTimer(g_filterWindow, g_checkUpdateTimerId, 1000, 0);
 
 			// マークウィンドウを作成する。
-			g_dragSrcWindow = createMarkWindow(RGB(0x00, 0x00, 0xff));
+			g_dragSrcWindow = createMarkWindow(g_dragSrcColor);
 			MY_TRACE_HEX(g_dragSrcWindow);
-			g_dragDstWindow = createMarkWindow(RGB(0xff, 0x00, 0x00));
+			g_dragDstWindow = createMarkWindow(g_dragDstColor);
 			MY_TRACE_HEX(g_dragDstWindow);
 
 			g_targetMarkWindow = TargetMarkWindowPtr(new TargetMarkWindow());
@@ -64,7 +64,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 
 			break;
 		}
-	case AviUtl::detail::FilterPluginWindowMessage::Exit:
+	case AviUtl::FilterPlugin::WindowMessage::Exit:
 		{
 			MY_TRACE(_T("func_WndProc(Exit, 0x%08X, 0x%08X)\n"), wParam, lParam);
 
@@ -77,7 +77,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 
 			break;
 		}
-	case AviUtl::detail::FilterPluginWindowMessage::Command:
+	case AviUtl::FilterPlugin::WindowMessage::Command:
 		{
 			MY_TRACE(_T("func_WndProc(Command, 0x%08X, 0x%08X)\n"), wParam, lParam);
 
@@ -91,7 +91,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 		}
 	case WM_TIMER:
 		{
-			if (wParam == TIMER_ID_CHECK_UPDATE)
+			if (wParam == g_checkUpdateTimerId)
 			{
 				if (g_settingsFile->isFileUpdated())
 					loadSettings(g_settingsFile->getFilePath());
@@ -109,17 +109,17 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 EXTERN_C AviUtl::FilterPluginDLL* CALLBACK GetFilterTable()
 {
 	LPCSTR name = "フィルタドラッグ移動";
-	LPCSTR information = "フィルタドラッグ移動 9.1.0 by 蛇色";
+	LPCSTR information = "フィルタドラッグ移動 9.2.0 by 蛇色";
 
 	static AviUtl::FilterPluginDLL filter =
 	{
 		.flag =
-//			AviUtl::detail::FilterPluginFlag::NoConfig | // このフラグを指定するとウィンドウが作成されなくなってしまう。
-			AviUtl::detail::FilterPluginFlag::AlwaysActive | // このフラグがないと「フィルタ」に ON/OFF を切り替えるための項目が追加されてしまう。
-			AviUtl::detail::FilterPluginFlag::DispFilter | // このフラグがないと「設定」の方にウィンドウを表示するための項目が追加されてしまう。
-			AviUtl::detail::FilterPluginFlag::WindowThickFrame |
-			AviUtl::detail::FilterPluginFlag::WindowSize |
-			AviUtl::detail::FilterPluginFlag::ExInformation,
+//			AviUtl::FilterPlugin::Flag::NoConfig | // このフラグを指定するとウィンドウが作成されなくなってしまう。
+			AviUtl::FilterPlugin::Flag::AlwaysActive | // このフラグがないと「フィルタ」に ON/OFF を切り替えるための項目が追加されてしまう。
+			AviUtl::FilterPlugin::Flag::DispFilter | // このフラグがないと「設定」の方にウィンドウを表示するための項目が追加されてしまう。
+			AviUtl::FilterPlugin::Flag::WindowThickFrame |
+			AviUtl::FilterPlugin::Flag::WindowSize |
+			AviUtl::FilterPlugin::Flag::ExInformation,
 		.x = 400,
 		.y = 400,
 		.name = name,
