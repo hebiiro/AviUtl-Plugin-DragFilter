@@ -3,7 +3,6 @@
 オブジェクトダイアログのフィルタをドラッグして移動できるようにします。
 [最新バージョンをダウンロード](../../releases/latest/)
 
-![フィルタドラッグ移動](https://user-images.githubusercontent.com/96464759/154659767-e7e5ac3a-c181-4300-872a-1304905210c1.png)
 ![フィルタドラッグ移動 7 0 0 トリム後](https://user-images.githubusercontent.com/96464759/155107551-2556fb10-3f99-4000-ac7b-199a8476bebf.png)
 
 ## 導入方法
