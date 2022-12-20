@@ -4,6 +4,7 @@
 namespace TargetMark {
 //--------------------------------------------------------------------
 
+extern BOOL g_enable;
 extern BYTE g_alpha;
 extern Color g_penColor;
 extern REAL g_penWidth;

@@ -5,6 +5,7 @@
 namespace TargetMark {
 //--------------------------------------------------------------------
 
+BOOL g_enable = TRUE;
 BYTE g_alpha = 192;
 Color g_penColor(192, 0, 0, 0);
 REAL g_penWidth = 2.0f;

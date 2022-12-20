@@ -62,11 +62,15 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 			g_targetMarkWindow = TargetMarkWindowPtr(new TargetMarkWindow());
 			g_targetMarkWindow->Create(g_instance);
 
+			g_keyboardHook = ::SetWindowsHookEx(WH_KEYBOARD, keyboardHookProc, 0, ::GetCurrentThreadId());
+
 			break;
 		}
 	case AviUtl::FilterPlugin::WindowMessage::Exit:
 		{
 			MY_TRACE(_T("func_WndProc(Exit, 0x%08X, 0x%08X)\n"), wParam, lParam);
+
+			::UnhookWindowsHookEx(g_keyboardHook), g_keyboardHook = 0;
 
 			// マークウィンドウを削除する。
 			::DestroyWindow(g_dragSrcWindow), g_dragSrcWindow = 0;
@@ -109,7 +113,7 @@ BOOL func_WndProc(HWND hwnd, UINT message, WPARAM wParam, LPARAM lParam, AviUtl:
 EXTERN_C AviUtl::FilterPluginDLL* CALLBACK GetFilterTable()
 {
 	LPCSTR name = "フィルタドラッグ移動";
-	LPCSTR information = "フィルタドラッグ移動 9.2.0 by 蛇色";
+	LPCSTR information = "フィルタドラッグ移動 9.3.0 by 蛇色";
 
 	static AviUtl::FilterPluginDLL filter =
 	{

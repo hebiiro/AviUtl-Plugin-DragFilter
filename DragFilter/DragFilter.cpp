@@ -20,9 +20,14 @@ HWND g_dragSrcWindow = 0; // ドラッグ元をマークするウィンドウ。
 HWND g_dragDstWindow = 0; // ドラッグ先をマークするウィンドウ。
 FileUpdateCheckerPtr g_settingsFile;
 TargetMarkWindowPtr g_targetMarkWindow;
+HHOOK g_keyboardHook = 0;
 
 COLORREF g_dragSrcColor = RGB(0x00, 0x00, 0xff);
 COLORREF g_dragDstColor = RGB(0xff, 0x00, 0x00);
+BOOL g_useShiftKey = FALSE;
+BOOL g_useCtrlKey = FALSE;
+BOOL g_useAltKey = FALSE;
+BOOL g_useWinKey = FALSE;
 
 ObjectHolder g_srcObject; // ドラッグ元のオブジェクト。
 FilterHolder g_srcFilter; // ドラッグ元のフィルタ。
@@ -334,6 +339,7 @@ void loadSettings(LPCWSTR fileName)
 {
 	MY_TRACE(_T("loadSettings(%ws)\n"), fileName);
 
+	getPrivateProfileBool(fileName, L"TargetMark", L"enable", TargetMark::g_enable);
 	getPrivateProfileInt(fileName, L"TargetMark", L"alpha", TargetMark::g_alpha);
 	getPrivateProfileColor(fileName, L"TargetMark", L"penColor", TargetMark::g_penColor);
 	getPrivateProfileReal(fileName, L"TargetMark", L"penWidth", TargetMark::g_penWidth);
@@ -348,12 +354,37 @@ void loadSettings(LPCWSTR fileName)
 
 	getPrivateProfileColor(fileName, L"Settings", L"dragSrcColor", g_dragSrcColor);
 	getPrivateProfileColor(fileName, L"Settings", L"dragDstColor", g_dragDstColor);
+	getPrivateProfileBool(fileName, L"Settings", L"useShiftKey", g_useShiftKey);
+	getPrivateProfileBool(fileName, L"Settings", L"useCtrlKey", g_useCtrlKey);
+	getPrivateProfileBool(fileName, L"Settings", L"useAltKey", g_useAltKey);
+	getPrivateProfileBool(fileName, L"Settings", L"useWinKey", g_useWinKey);
 }
 
 //--------------------------------------------------------------------
 
+// vk が押されていなかった場合は TRUE を返す。
+BOOL isKeyUp(UINT vk)
+{
+	return ::GetKeyState(vk) >= 0;
+}
+
+BOOL canBeginDrag()
+{
+	// 修飾キーが設定されているのにそのキーが押されていなかった場合は FALSE を返す。
+
+	if (g_useShiftKey && isKeyUp(VK_SHIFT)) return FALSE;
+	if (g_useCtrlKey && isKeyUp(VK_CONTROL)) return FALSE;
+	if (g_useAltKey && isKeyUp(VK_MENU)) return FALSE;
+	if (g_useWinKey && (isKeyUp(VK_LWIN) && isKeyUp(VK_RWIN))) return FALSE;
+
+	return TRUE;
+}
+
 void moveTargetMarkWindow(const DialogInfo& di, FilterHolder filter, BOOL show)
 {
+	if (!TargetMark::g_enable)
+		return;
+
 	LPCSTR name = filter.getName();
 //	MY_TRACE_STR(name);
 
@@ -454,6 +485,10 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, SettingDialogProc, (HWND hwnd, UINT me
 			{
 //				MY_TRACE(_T("WM_SETCURSOR\n"));
 
+				// ドラッグを開始できるかチェックする。
+				if (!canBeginDrag())
+					break;
+
 				DialogInfo di(hwnd);
 
 				// マウスカーソルの位置を取得する。
@@ -480,6 +515,10 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, SettingDialogProc, (HWND hwnd, UINT me
 	case WM_LBUTTONDOWN:
 		{
 			MY_TRACE(_T("WM_LBUTTONDOWN\n"));
+
+			// ドラッグを開始できるかチェックする。
+			if (!canBeginDrag())
+				break;
 
 			DialogInfo di(hwnd);
 
@@ -662,6 +701,44 @@ IMPLEMENT_HOOK_PROC_NULL(LRESULT, WINAPI, SettingDialogProc, (HWND hwnd, UINT me
 	}
 
 	return true_SettingDialogProc(hwnd, message, wParam, lParam);
+}
+
+//--------------------------------------------------------------------
+
+BOOL checkModifier(WPARAM wParam)
+{
+	// 設定ダイアログのウィンドウハンドルを取得する。
+	HWND hwnd = g_auin.GetSettingDialog();
+
+	// ::WindowFromPoint() の戻り値が設定ダイアログではない場合は何もしない。
+	POINT pos; ::GetCursorPos(&pos);
+	if (hwnd != ::WindowFromPoint(pos))
+		return FALSE;
+
+	// 修飾キーに指定されたキーの状態が変更された場合はマウスカーソルを更新する。
+	if (
+		(g_useShiftKey && wParam == VK_SHIFT) ||
+		(g_useCtrlKey && wParam == VK_CONTROL) ||
+		(g_useAltKey && wParam == VK_MENU) ||
+		(g_useWinKey && (wParam == VK_LWIN || wParam == VK_RWIN))
+		)
+	{
+		::PostMessage(hwnd, WM_SETCURSOR, (WPARAM)hwnd, HTCLIENT);
+
+		return TRUE;
+	}
+
+	return FALSE;
+}
+
+LRESULT CALLBACK keyboardHookProc(int code, WPARAM wParam, LPARAM lParam)
+{
+	if (code != HC_ACTION)
+		return ::CallNextHookEx(g_keyboardHook, code, wParam, lParam);
+
+	checkModifier(wParam);
+
+	return ::CallNextHookEx(g_keyboardHook, code, wParam, lParam);
 }
 
 //--------------------------------------------------------------------
